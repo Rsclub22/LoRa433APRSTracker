@@ -1,7 +1,14 @@
 fullDebug = False
 power = 23  # min 5dBm max 23dBm
 hasPa = True  # has a power amplifier (adds 6dBm)
-callsign = "--CALL--"
+radio_mode = "APRS"  # APRS, MESH or DUAL (MeshCom Thüringen uses MESH/DUAL at 433.175 MHz)
+callsign = "--CALL--"  # APRS/MeshCom source callsign/path
+
+# MeshCom APRS-gateway details
+mesh_handle = "Meshcom-Th\u00fcringen"  # maps to node_atxt (displayed before the # in APRS-IS)
+mesh_name = "Meiningen"  # maps to node_name (displayed after the # in APRS-IS)
+mesh_status = "B=082"  # optional status text like battery percentage; empty to disable
+node_id = "--NODE--"  # MeshCom gateway/node ID from your MeshCom-Firmware device (decimal or 0x-hex)
 # symbol = '/b' # bike
 # symbol = '/>' # car
 # symbol = '/<' # motorbike

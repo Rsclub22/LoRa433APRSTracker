@@ -13,11 +13,28 @@ Connect the device to our computer using a UBC-C cable; do not connect the 13.8v
 
 Copy the 'adafruit-circuitpython-raspberry_pi_pico-en_US-9.?.uf2' file to the drive and patiently wait for it to reboot! 
 
-Once it restarts, you should see a new drive named 'CIRCUITPY' 
+Once it restarts, you should see a new drive named 'CIRCUITPY'
 
-Transfer the library folder (src/lib), followed by the src/boot.py file. Adjust the settings in the src/config.py (modify call/settings) and transfer it to the 'CIRCUITPY' drive. 
+Transfer the library folder (src/lib), followed by the src/boot.py file. Adjust the settings in the src/config.py (modify call/settings) and transfer it to the 'CIRCUITPY' drive.
 
 Finally, transfer the src/code.py file!
+
+## Radio modes (APRS + MeshCom TX)
+
+The tracker can now beacon on APRS (433.775 MHz), MeshCom (433.175 MHz), or both sequentially. Set `radio_mode` in `config.py` to one of:
+
+- `"APRS"` – APRS only (default)
+- `"MESH"` – MeshCom only (MeshCom-Firmware compatible)
+- `"DUAL"` – APRS first, then MeshCom after a short delay
+
+MeshCom TX now follows the live MeshCom-Firmware packet format and LoRa PHY defaults (433.175 MHz, BW 250 kHz, SF 11, CR 4/6, preamble 32, sync word 0x2B). Edit the MeshCom profile in `radio.py` to adjust frequency or LoRa parameters independently from APRS.
+
+### MeshCom setup quick guide
+
+- **MeshCom Thüringen frequency (Kanal)** – already baked into the MeshCom radio profile (`radio.py` sets 433.175 MHz), so simply choose `radio_mode = "MESH"` or `"DUAL"` in `config.py` to beacon on the Thüringen MeshCom channel. Switch back to `"APRS"` if you only want the standard 433.775 MHz APRS channel.
+- **Handle/Callsign for APRS-over-Mesh** – set `mesh_handle` (goes in front of the `#`) and `mesh_name` (goes after the `#`) to mirror what MeshCom-Firmware shows on APRS-IS (e.g. `Meshcom-Thüringen` and `Meiningen` become `Meshcom-Thüringen#Meiningen`). The RF path uses `callsign` as the source callsign just like the upstream firmware.
+- **Status/Battery text** – optional `mesh_status` can carry the same `/B=082`-style suffix the C++ firmware adds when reporting battery. Leave it empty (`""`) to suppress.
+- **Node ID** – set `node_id` in `config.py` to the same gateway/node ID shown by your MeshCom-Firmware device (Weboberfläche → Settings → Gateway ID, or via the `--info` serial command). Both decimal (e.g. `12345`) and `0x`-prefixed hex (e.g. `0x0001ABCD`) values are accepted; the firmware masks it to the 22-bit gateway portion exactly like the upstream packet builder.
 
 <img width="938" alt="TrackerTOP" src="https://github.com/Guru-RF/LoraAPRStracker/assets/1251767/c3a32cc5-92fe-420b-a335-53400f411a51">
 <img width="1076" alt="TrackerBottom" src="https://github.com/Guru-RF/LoraAPRStracker/assets/1251767/2ef5376d-9d41-4aac-892e-fea3d2fedd85">
