@@ -17,7 +17,7 @@ Once it restarts, you should see a new drive named 'CIRCUITPY'
 
 Transfer the library folder (src/lib), followed by the src/boot.py file. Adjust the settings in the src/config.py (modify call/settings) and transfer it to the 'CIRCUITPY' drive.
 
-Finally, transfer the src/code.py file!
+Finally, transfer the src/code.py file **together with the new src/radio.py and src/meshcom.py helpers** so the MeshCom APRS payload builder and radio profile can be imported at startup. All three files must sit alongside each other at the root of the `CIRCUITPY` drive.
 
 ## Radio modes (APRS + MeshCom TX)
 
