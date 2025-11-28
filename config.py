@@ -1,7 +1,9 @@
 fullDebug = False
 power = 23  # min 5dBm max 23dBm
 hasPa = True  # has a power amplifier (adds 6dBm)
+radio_mode = "APRS"  # APRS, MESH or DUAL
 callsign = "--CALL--"
+node_id = "--NODE--"
 # symbol = '/b' # bike
 # symbol = '/>' # car
 # symbol = '/<' # motorbike

@@ -19,6 +19,8 @@ from rfguru_nvm import NonVolatileMemory
 from watchdog import WatchDogMode
 
 import config
+from meshcom import build_mesh_position_frame
+from radio import RADIO_PROFILES, Radio
 
 # stop autoreloading
 supervisor.runtime.autoreload = False
@@ -156,8 +158,20 @@ try:
             w.feed()
             time.sleep(1)
 
+    if config.radio_mode.upper() not in ("APRS", "MESH", "DUAL"):
+        print(yellow("radio_mode must be APRS, MESH or DUAL in config file"))
+        while True:
+            w.feed()
+            time.sleep(1)
+
     if isinstance(config.callsign, bytes):
         print(yellow("callsign is not defined in config file, modify and reboot !"))
+        while True:
+            w.feed()
+            time.sleep(1)
+
+    if isinstance(config.node_id, bytes):
+        print(yellow("node_id is not defined in config file, modify and reboot !"))
         while True:
             w.feed()
             time.sleep(1)
@@ -298,6 +312,32 @@ except AttributeError as error:
 
 # convert to upper
 config.callsign = config.callsign.upper()
+config.node_id = config.node_id.upper()
+RADIO_MODE = config.radio_mode.upper()
+
+
+def build_aprs_position_frame(fix, callsign):
+    message = "{}>APRFGT:@{}{}{}".format(
+        callsign, fix["ts"], fix["pos"], fix["comment"]
+    )
+    return (
+        bytes("{}".format("<"), "UTF-8")
+        + binascii.unhexlify("FF")
+        + binascii.unhexlify("01")
+        + bytes("{}".format(message), "UTF-8")
+    )
+
+
+def send_beacon(radio, fix):
+    if RADIO_MODE in ("APRS", "DUAL"):
+        radio.set_profile("aprs")
+        radio.tx(build_aprs_position_frame(fix, config.callsign))
+    if RADIO_MODE in ("MESH", "DUAL"):
+        time.sleep_ms(300)
+        radio.set_profile("mesh")
+        radio.tx(
+            build_mesh_position_frame(fix, config.node_id, config.callsign, config.symbol)
+        )
 
 
 def _format_datetime(datetime):
@@ -357,6 +397,8 @@ try:
     # Lora Module
     rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, RADIO_FREQ_MHZ, baudrate=1000000)
     rfm9x.tx_power = config.power  # 5 min 23 max
+    radio = Radio(rfm9x, w, RADIO_PROFILES)
+    radio.set_profile("aprs")
 
     print(yellow("Init GPS"))
     # GPS Module (uart)
@@ -619,30 +661,31 @@ try:
             if (time.time() - elapsed) >= config.rate or last_lon is None:
                 # send telemetry data once when in keepalive mode
                 if (time.time() - 86400) > lastMetaData and isMoving is False:
-                    # send telemetry metadata daily in keepalive modus
-                    lastMetaData = time.time()
-                    print(yellow("Send Telemetry MetaDATA"))
-                    if config.hasPa is True:
-                        amp.value = True
-                        time.sleep(0.3)
-                    for data in aprsData:
-                        message = "{}>APRFGT::{:9}:{}".format(
-                            config.callsign, config.callsign, data
-                        )
-                        loraLED.value = True
-                        print(yellow("LoRa send message: " + message))
-                        rfm9x.send(
-                            w,
-                            bytes("{}".format("<"), "UTF-8")
-                            + binascii.unhexlify("FF")
-                            + binascii.unhexlify("01")
-                            + bytes("{}".format(message), "UTF-8"),
-                        )
-                        loraLED.value = False
-                        time.sleep(0.2)
-                    if config.hasPa is True:
-                        time.sleep(0.1)
-                        amp.value = False
+                    if RADIO_MODE in ("APRS", "DUAL"):
+                        # send telemetry metadata daily in keepalive modus
+                        lastMetaData = time.time()
+                        print(yellow("Send Telemetry MetaDATA"))
+                        if config.hasPa is True:
+                            amp.value = True
+                            time.sleep(0.3)
+                        for data in aprsData:
+                            message = "{}>APRFGT::{:9}:{}".format(
+                                config.callsign, config.callsign, data
+                            )
+                            loraLED.value = True
+                            print(yellow("LoRa send message: " + message))
+                            radio.set_profile("aprs")
+                            radio.tx(
+                                bytes("{}".format("<"), "UTF-8")
+                                + binascii.unhexlify("FF")
+                                + binascii.unhexlify("01")
+                                + bytes("{}".format(message), "UTF-8")
+                            )
+                            loraLED.value = False
+                            time.sleep(0.2)
+                        if config.hasPa is True:
+                            time.sleep(0.1)
+                            amp.value = False
             if (
                 config.voltage is True
                 and config.triggerVoltage is True
@@ -657,10 +700,11 @@ try:
                         )
                     )
                     # send RF message to pager here
-                    print(yellow("Send APRS low voltage message"))
-                    if config.hasPa is True:
-                        amp.value = True
-                        time.sleep(0.3)
+                    if RADIO_MODE in ("APRS", "DUAL"):
+                        print(yellow("Send APRS low voltage message"))
+                        if config.hasPa is True:
+                            amp.value = True
+                            time.sleep(0.3)
                         message = "{}>APRFGT::{:9}:{}".format(
                             config.callsign,
                             config.triggerVoltageCall,
@@ -670,18 +714,18 @@ try:
                         )
                         loraLED.value = True
                         print(yellow("LoRa send message: " + message))
-                        rfm9x.send(
-                            w,
+                        radio.set_profile("aprs")
+                        radio.tx(
                             bytes("{}".format("<"), "UTF-8")
                             + binascii.unhexlify("FF")
                             + binascii.unhexlify("01")
-                            + bytes("{}".format(message), "UTF-8"),
+                            + bytes("{}".format(message), "UTF-8")
                         )
                         loraLED.value = False
                         time.sleep(0.2)
-                    if config.hasPa is True:
-                        time.sleep(0.1)
-                        amp.value = False
+                        if config.hasPa is True:
+                            time.sleep(0.1)
+                            amp.value = False
                 else:
                     print(
                         yellow("Voltage level OK (" + str(bat_voltage / 100) + ") !!!")
@@ -779,20 +823,32 @@ try:
                     comment = comment + altitude
                     print(purple("GPS Altitude: " + str(gps.altitude_m) + " m"))
 
-                # send LoRa packet
+                fix = {
+                    "ts": ts,
+                    "pos": pos,
+                    "comment": comment,
+                    "lat": gps.latitude,
+                    "lon": gps.longitude,
+                    "altitude": gps.altitude_m,
+                    "timestamp": gps.timestamp_utc,
+                }
+
                 message = "{}>APRFGT:@{}{}{}".format(config.callsign, ts, pos, comment)
                 loraLED.value = True
                 if config.hasPa is True:
                     amp.value = True
                     time.sleep(0.3)
                 print(purple("LoRa send message: " + message))
-                rfm9x.send(
-                    w,
-                    bytes("{}".format("<"), "UTF-8")
-                    + binascii.unhexlify("FF")
-                    + binascii.unhexlify("01")
-                    + bytes("{}".format(message), "UTF-8"),
-                )
+                if RADIO_MODE in ("MESH", "DUAL"):
+                    try:
+                        mesh_preview = build_mesh_position_frame(
+                            fix, config.node_id
+                        ).decode("utf-8")
+                        print(purple("MeshCom payload: " + mesh_preview))
+                    except Exception:
+                        # Do not block APRS TX if preview formatting fails
+                        pass
+                send_beacon(radio, fix)
                 if config.hasPa is True:
                     time.sleep(0.1)
                     amp.value = False
