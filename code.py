@@ -335,7 +335,7 @@ def send_beacon(radio, fix):
         radio.set_profile("aprs")
         radio.tx(build_aprs_position_frame(fix, config.callsign))
     if RADIO_MODE in ("MESH", "DUAL"):
-        time.sleep_ms(300)
+        time.sleep(0.3)
         radio.set_profile("mesh")
         radio.tx(
             build_mesh_position_frame(
