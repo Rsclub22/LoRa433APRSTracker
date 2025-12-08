@@ -133,6 +133,13 @@ try:
     if not isinstance(config.fullDebug, bool):
         raise AttributeError("fullDebug must be True/False")
 
+    if isinstance(config.loraMode, bytes) or not isinstance(config.loraMode, str):
+        raise AttributeError("loraMode must be a string")
+
+    config.loraMode = config.loraMode.upper()
+    if config.loraMode not in ("APRS", "MESHCOM", "DUAL"):
+        raise AttributeError("loraMode must be APRS, MESHCOM, or DUAL")
+
     if not (5 <= config.power <= 23):
         raise AttributeError("power must be between 5 and 23 dBm")
 
@@ -378,7 +385,8 @@ aprs = APRS()
 
 print(yellow("Init LoRa"))
 
-RADIO_FREQ_MHZ = 433.775
+APRS_RADIO_FREQ_MHZ = 433.775
+MESHCOM_FREQ_MHZ = 433.175
 
 CS = digitalio.DigitalInOut(board.GP21)
 RESET = digitalio.DigitalInOut(board.GP20)
@@ -387,16 +395,160 @@ spi = busio.SPI(board.GP18, MOSI=board.GP19, MISO=board.GP16)
 try:
     rfm9x = adafruit_rfm9x.RFM9x(
         spi, CS, RESET,
-        RADIO_FREQ_MHZ,
+        APRS_RADIO_FREQ_MHZ,
         baudrate=1000000
     )
     rfm9x.tx_power = config.power  # 5–23 dBm
-    print(green("LoRa OK (freq = " + str(RADIO_FREQ_MHZ) + " MHz)"))
+    print(green("LoRa OK (freq = " + str(APRS_RADIO_FREQ_MHZ) + " MHz)"))
 except Exception as e:
     print(red("LoRa INIT ERROR: " + str(e)))
     while True:
         w.feed()
         time.sleep(1)
+
+# Store initial APRS radio parameters for later reuse
+APRSMODE = {
+    "freq": APRS_RADIO_FREQ_MHZ,
+    "bw": getattr(rfm9x, "signal_bandwidth", None),
+    "sf": getattr(rfm9x, "spreading_factor", None),
+    "cr": getattr(rfm9x, "coding_rate", None),
+    "implicit": getattr(rfm9x, "implicit_header", None),
+}
+
+MESHCOM_FREQ = MESHCOM_FREQ_MHZ
+lora_mode = config.loraMode
+
+
+def set_aprs_mode():
+    global lora_mode
+
+    try:
+        rfm9x.frequency_mhz = APRSMODE["freq"]
+        if APRSMODE["bw"] is not None:
+            rfm9x.signal_bandwidth = APRSMODE["bw"]
+        if APRSMODE["sf"] is not None:
+            rfm9x.spreading_factor = APRSMODE["sf"]
+        if APRSMODE["cr"] is not None:
+            rfm9x.coding_rate = APRSMODE["cr"]
+        if APRSMODE["implicit"] is not None:
+            rfm9x.implicit_header = APRSMODE["implicit"]
+    except Exception as e:
+        print(red("LoRa APRS mode restore failed: " + str(e)))
+
+    rfm9x.tx_power = config.power
+    lora_mode = "APRS"
+
+
+def set_meshcom_mode():
+    global lora_mode
+
+    try:
+        rfm9x.frequency_mhz = MESHCOM_FREQ
+        rfm9x.signal_bandwidth = 250000
+        rfm9x.spreading_factor = 11
+        rfm9x.coding_rate = 6  # Represents 4/6 coding rate
+        rfm9x.implicit_header = False  # Explicit header mode
+    except Exception as e:
+        print(red("LoRa MeshCom mode set failed: " + str(e)))
+    else:
+        lora_mode = "MESHCOM"
+
+
+# Apply configured startup LoRa mode
+if config.loraMode == "MESHCOM":
+    set_meshcom_mode()
+else:
+    set_aprs_mode()
+    if config.loraMode == "DUAL":
+        lora_mode = "DUAL (APRS active)"
+
+
+def send_lora_payload(payload, add_aprs_prefix=True):
+    try:
+        loraLED.value = True
+
+        if config.hasPa:
+            amp.value = True
+            time.sleep(0.25)
+
+        if add_aprs_prefix:
+            payload = (b"<" + binascii.unhexlify("FF") +
+                       binascii.unhexlify("01") + payload)
+
+        rfm9x.send(w, payload)
+
+        if config.hasPa:
+            time.sleep(0.1)
+            amp.value = False
+
+        loraLED.value = False
+
+    except Exception as txerr:
+        print(red("LoRa TX ERROR: " + str(txerr)))
+
+
+def build_dummy_aprs_packet(lat, lon):
+    now = time.localtime()
+    ts = aprs.makeTimestamp(
+        "z",
+        now.tm_mday,
+        now.tm_hour,
+        now.tm_min,
+        now.tm_sec,
+    )
+
+    aprs_pos = aprs.makePosition(
+        lat,
+        lon,
+        0,
+        -1,
+        config.symbol
+    )
+
+    comment = "DUMMY"
+    message = "{}>APRFGT:@{}{}{}".format(
+        config.callsign,
+        ts,
+        aprs_pos,
+        comment,
+    )
+
+    return bytes(message, "UTF-8")
+
+
+def build_dummy_meshcom_frame(lat, lon):
+    frame = bytearray()
+
+    identifier = ord('!')
+    frame.append(identifier)
+
+    msg_id = int(time.monotonic()) & 0xFFFFFFFF
+    frame += msg_id.to_bytes(4, "little")
+
+    frame.append(0x05)  # MAX-HOP = 5, no flags set
+
+    src = bytes(config.callsign, "UTF-8")
+    frame.append(len(src))
+    frame += src
+
+    dest = b"*"
+    frame.append(len(dest))
+    frame += dest
+
+    frame.append(0x00)  # zero digipeaters for now
+
+    info = "!LAT={:.5f};LON={:.5f};DUMMY".format(lat, lon)
+    info_bytes = bytes(info, "UTF-8")
+    frame.append(len(info_bytes))
+    frame += info_bytes
+
+    frame.append(0x01)  # MOD byte placeholder
+
+    fcs = sum(frame) & 0xFFFF
+    frame += fcs.to_bytes(2, "little")
+    frame.append(0x23)  # '#'
+
+    return bytes(frame)
 
 
 # ============================================================
@@ -504,6 +656,133 @@ skip_first_bme680 = True
 frozen_lat = None
 frozen_lon = None
 
+last_fix = {
+    "lat": None,
+    "lon": None,
+    "timestamp": None,
+}
+
+
+def _remember_fix(lat, lon):
+    last_fix["lat"] = lat
+    last_fix["lon"] = lon
+    last_fix["timestamp"] = time.monotonic()
+
+
+def format_last_fix():
+    if last_fix["lat"] is None or last_fix["lon"] is None:
+        return "no fix"
+
+    age = time.monotonic() - last_fix["timestamp"] if last_fix["timestamp"] else 0
+    return "{:.6f},{:.6f} ({}s ago)".format(
+        last_fix["lat"],
+        last_fix["lon"],
+        int(age)
+    )
+
+
+def handle_senddummy(args):
+    if len(args) != 3:
+        print(red("ERROR: invalid SENDDUMMY syntax"))
+        return
+
+    if not config.fullDebug:
+        print(red("fullDebug is OFF, dummy packets are disabled"))
+        return
+
+    try:
+        lat = float(args[0])
+        lon = float(args[1])
+    except ValueError:
+        print(red("ERROR: invalid latitude/longitude"))
+        return
+
+    mode = args[2].upper()
+    if mode not in ("APRS", "MESHCOM", "DUAL"):
+        print(red("ERROR: unknown mode"))
+        return
+
+    sent_aprs = False
+    sent_mesh = False
+
+    if mode in ("APRS", "DUAL"):
+        set_aprs_mode()
+        send_lora_payload(build_dummy_aprs_packet(lat, lon))
+        sent_aprs = True
+
+    if mode in ("MESHCOM", "DUAL"):
+        set_meshcom_mode()
+        send_lora_payload(build_dummy_meshcom_frame(lat, lon), add_aprs_prefix=False)
+        sent_mesh = True
+        set_aprs_mode()
+
+    if sent_aprs and sent_mesh:
+        print(green("DUMMY APRS + MeshCom packets sent (DUAL)"))
+    elif sent_aprs:
+        print(green("DUMMY APRS packet sent"))
+    elif sent_mesh:
+        print(green("DUMMY MeshCom packet sent"))
+
+
+def process_command(cmd):
+    parts = cmd.strip().split()
+    if len(parts) == 0:
+        return
+
+    action = parts[0].upper()
+
+    if action == "FULLDEBUG":
+        if len(parts) != 2:
+            print(red("ERROR: invalid FULLDEBUG syntax"))
+            return
+        if parts[1].upper() == "ON":
+            config.fullDebug = True
+            print(green("fullDebug enabled"))
+        elif parts[1].upper() == "OFF":
+            config.fullDebug = False
+            print(yellow("fullDebug disabled"))
+        else:
+            print(red("ERROR: FULLDEBUG expects ON or OFF"))
+    elif action == "SENDDUMMY":
+        handle_senddummy(parts[1:])
+    elif action == "STATUS":
+        lo_ra_state = lora_mode
+        if config.loraMode == "DUAL":
+            lo_ra_state = "{} (pref: DUAL)".format(lora_mode)
+
+        print(yellow("STATUS: fullDebug={} | LoRa={} | LastFix={}".format(
+            config.fullDebug,
+            lo_ra_state,
+            format_last_fix()
+        )))
+    else:
+        print(red("Unknown command: " + action))
+
+
+def poll_serial_commands():
+    if serial is None:
+        return
+
+    if hasattr(serial, "connected") and not serial.connected:
+        return
+
+    while True:
+        try:
+            if serial.in_waiting == 0:
+                break
+            raw = serial.readline()
+        except Exception as e:
+            print(red("Serial read error: " + str(e)))
+            break
+
+        if not raw:
+            break
+
+        cmd = raw.decode("utf-8", "ignore").strip()
+        if cmd:
+            print(purple("CMD: " + cmd))
+            process_command(cmd)
+
 # ============================================================
 #       MAIN LOOP — GPS UPDATE + SMARTBEACON DECISION ENGINE
 # ============================================================
@@ -532,6 +811,8 @@ def freeze_position_if_stationary(lat, lon, speed):
 while True:
     w.feed()
 
+    poll_serial_commands()
+
     # ------------------------------------------------------------
     #    GPS UPDATE
     # ------------------------------------------------------------
@@ -544,18 +825,18 @@ while True:
     # ------------------------------------------------------------
     #    GPS FIX HANDLING + LED BLINK LOGIC
     # ------------------------------------------------------------
-    if not gps.has_fix:
-        if gps_blink:
-            gpsLED.value = True
-            gps_blink = False
-        else:
-            gpsLED.value = False
-            gps_blink = True
-            time.sleep(0.1)
+        if not gps.has_fix:
+            if gps_blink:
+                gpsLED.value = True
+                gps_blink = False
+            else:
+                gpsLED.value = False
+                gps_blink = True
+                time.sleep(0.1)
 
-        if config.fullDebug:
-            print(yellow("No GPS FIX…"))
-        continue
+            if config.fullDebug:
+                print(yellow("No GPS FIX…"))
+            continue
 
     # We now have a fix
     gpsLED.value = True
@@ -575,6 +856,8 @@ while True:
     lat = gps.latitude
     lon = gps.longitude
     alt = gps.altitude_m
+
+    _remember_fix(lat, lon)
 
     # Speed in km/h
     speed = -1
@@ -662,6 +945,8 @@ while True:
 
 while True:  # Beacon sending loop
     w.feed()
+
+    poll_serial_commands()
 
     # ------------------------------------------------------------
     #   BUILD APRS TIMESTAMP

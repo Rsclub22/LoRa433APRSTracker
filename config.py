@@ -10,6 +10,7 @@ profile = "car"     # <-- DEFAULT
 # Common Settings
 # ------------------------------------------------------------
 fullDebug = False
+loraMode = "APRS"   # APRS (default), MeshCom, or DUAL (APRS active + MeshCom debug)
 
 # Radio settings
 power = 23          # 5–23 dBm
