@@ -17,6 +17,7 @@ import adafruit_rfm9x
 import board
 import busio
 import digitalio
+import microcontroller
 import supervisor
 from microcontroller import watchdog as w
 
@@ -46,6 +47,18 @@ HW_ID_TLORA = 0x03  # TLora hardware ID
 MOD_SF11_CR46_BW250 = 0x03
 FIRMWARE_VERSION = 0x01
 FIRMWARE_SUB_VERSION = ord('#')
+
+# Generate Node ID from microcontroller unique ID
+# This creates a consistent node ID based on hardware
+def get_node_id():
+    """Generate a 22-bit node ID from the microcontroller's unique ID"""
+    uid = microcontroller.cpu.uid
+    # Use last 4 bytes of UID and mask to 22 bits
+    node_id = (uid[-4] << 24 | uid[-3] << 16 | uid[-2] << 8 | uid[-1]) & 0x3FFFFF
+    return node_id
+
+NODE_ID = get_node_id()
+print(f"Node ID: 0x{NODE_ID:06X}")
 
 # Message counter
 msg_counter = 0
@@ -114,11 +127,16 @@ def encode_meshcom_message(source_call, destination, text, msg_id, max_hop=5):
 
 
 def generate_msg_id():
-    """Generate a unique message ID"""
+    """
+    Generate a unique message ID using MeshCom format
+    Format: (NODE_ID << 10) | (counter & 0x3FF)
+    - Bits 31-10: Node ID (22 bits) - unique per device
+    - Bits 9-0: Message counter (10 bits) - 0-999
+    """
     global msg_counter
     msg_counter = (msg_counter + 1) % 1000
-    timestamp_part = (int(time.monotonic()) & 0x3FFFFF) << 10
-    return timestamp_part | (msg_counter & 0x3FF)
+    # MeshCom format: (MAC_address & 0x3FFFFF) << 10 | (counter & 0x3FF)
+    return (NODE_ID << 10) | (msg_counter & 0x3FF)
 
 
 # Test configuration
