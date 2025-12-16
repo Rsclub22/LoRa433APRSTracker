@@ -122,7 +122,7 @@ def generate_msg_id():
 
 
 # Test configuration
-SOURCE_CALL = "TLora"
+SOURCE_CALL = "DN9APW-8"
 DESTINATION = "*"  # Broadcast
 TEST_MESSAGE = "MeshCom protocol test from RF.Guru TLora"
 
