@@ -48,17 +48,39 @@ MOD_SF11_CR46_BW250 = 0x03
 FIRMWARE_VERSION = 0x01
 FIRMWARE_SUB_VERSION = ord('#')
 
-# Generate Node ID from microcontroller unique ID
-# This creates a consistent node ID based on hardware
-def get_node_id():
-    """Generate a 22-bit node ID from the microcontroller's unique ID"""
-    uid = microcontroller.cpu.uid
-    # Use last 4 bytes of UID and mask to 22 bits
-    node_id = (uid[-4] << 24 | uid[-3] << 16 | uid[-2] << 8 | uid[-1]) & 0x3FFFFF
-    return node_id
+# Node ID file for persistence
+NODE_ID_FILE = "/node_id.txt"
 
-NODE_ID = get_node_id()
-print(f"Node ID: 0x{NODE_ID:06X}")
+def load_or_generate_node_id():
+    """
+    Load node ID from file if it exists, otherwise generate and save it.
+    This ensures the node ID remains consistent across reboots.
+    """
+    try:
+        # Try to read existing node ID from file
+        with open(NODE_ID_FILE, 'r') as f:
+            node_id_str = f.read().strip()
+            node_id = int(node_id_str, 16)
+            print(f"Loaded Node ID from file: 0x{node_id:06X}")
+            return node_id
+    except (OSError, ValueError):
+        # File doesn't exist or is invalid, generate new node ID
+        uid = microcontroller.cpu.uid
+        # Use last 4 bytes of UID and mask to 22 bits
+        node_id = (uid[-4] << 24 | uid[-3] << 16 | uid[-2] << 8 | uid[-1]) & 0x3FFFFF
+        
+        # Save node ID to file for future use
+        try:
+            with open(NODE_ID_FILE, 'w') as f:
+                f.write(f"{node_id:06X}")
+            print(f"Generated and saved new Node ID: 0x{node_id:06X}")
+        except OSError as e:
+            print(f"Warning: Could not save node ID to file: {e}")
+            print(f"Generated Node ID (not saved): 0x{node_id:06X}")
+        
+        return node_id
+
+NODE_ID = load_or_generate_node_id()
 
 # Message counter
 msg_counter = 0
