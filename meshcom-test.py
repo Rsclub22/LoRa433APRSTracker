@@ -42,7 +42,7 @@ rfm9x.tx_power = 23
 print(f"LoRa initialized at {RADIO_FREQ_MHZ} MHz")
 
 # MeshCom Protocol Constants
-HW_ID_RP2040 = 0x0A
+HW_ID_RP2040 = 0x0A  # TLora hardware ID
 MOD_SF11_CR46_BW250 = 0x03
 FIRMWARE_VERSION = 0x01
 FIRMWARE_SUB_VERSION = ord('#')
@@ -122,9 +122,9 @@ def generate_msg_id():
 
 
 # Test configuration
-SOURCE_CALL = "TEST-1"
+SOURCE_CALL = "TLora"
 DESTINATION = "*"  # Broadcast
-TEST_MESSAGE = "MeshCom protocol test from RF.Guru RP2040"
+TEST_MESSAGE = "MeshCom protocol test from RF.Guru TLora"
 
 print(f"\nMeshCom Protocol Test")
 print(f"Source: {SOURCE_CALL}")
