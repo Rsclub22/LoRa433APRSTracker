@@ -78,7 +78,7 @@ class APRSMessage:
         Returns dict with 'from', 'to', 'text', 'msg_id' or None if not a message
         """
         try:
-            # Expected format: CALL>APRFGT:ADDRESSEE:text{msg_id
+            # Expected format: CALL>APRFGT::ADDRESSEE :text{msg_id
             if ':' not in packet:
                 return None
             
@@ -89,19 +89,22 @@ class APRSMessage:
             
             from_call = parts[0].strip()
             
-            # Get payload after destination
+            # Get payload after destination (APRFGT)
             payload_parts = parts[1].split(':', 1)
             if len(payload_parts) < 2:
                 return None
             
             payload = payload_parts[1]
             
-            # Check if it's a message (starts with :)
+            # Check if it's a message (starts with : after APRFGT:)
             if not payload.startswith(':'):
                 return None
             
-            # Parse addressee and message text
-            msg_parts = payload[1:].split(':', 1)
+            # Remove leading :
+            payload = payload[1:]
+            
+            # Parse addressee and message text (separated by :)
+            msg_parts = payload.split(':', 1)
             if len(msg_parts) < 2:
                 return None
             

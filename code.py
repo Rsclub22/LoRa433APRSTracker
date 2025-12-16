@@ -717,30 +717,29 @@ while True:
     # ------------------------------------------------------------
     if config.textMessaging:
         try:
-            packet = rfm9x.receive(timeout=0.1)
+            # Check if there's a packet available (non-blocking)
+            packet = rfm9x.receive(timeout=0.05, with_header=True)
             if packet is not None:
                 try:
-                    # Decode packet
-                    packet_text = packet.decode('utf-8', errors='ignore')
-                    
-                    # Strip LoRa header if present
-                    if packet_text.startswith('<'):
-                        # Remove '<' and first 2 bytes (FF 01)
-                        if len(packet_text) > 3:
-                            packet_text = packet_text[3:]
-                    
-                    if config.fullDebug:
-                        print(purple("RX: " + packet_text))
-                    
-                    # Handle message
-                    handle_received_packet(packet_text)
+                    # Check for LoRa APRS header: < FF 01
+                    if len(packet) > 3 and packet[0] == 0x3C:  # '<'
+                        if packet[1] == 0xFF and packet[2] == 0x01:
+                            # Extract payload after header
+                            payload = packet[3:]
+                            packet_text = payload.decode('utf-8', errors='ignore')
+                            
+                            if config.fullDebug:
+                                print(purple("RX: " + packet_text))
+                            
+                            # Handle message
+                            handle_received_packet(packet_text)
                     
                 except Exception as e:
                     if config.fullDebug:
                         print(red("Packet decode error: " + str(e)))
         except Exception as e:
-            if config.fullDebug:
-                print(red("RX error: " + str(e)))
+            # Silently ignore receive errors (radio might be busy transmitting)
+            pass
     
     # ------------------------------------------------------------
     #    PROCESS MESSAGE QUEUE
