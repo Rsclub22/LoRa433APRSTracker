@@ -378,7 +378,7 @@ aprs = APRS()
 
 print(yellow("Init LoRa"))
 
-RADIO_FREQ_MHZ = 433.175  # MeshCom frequency
+RADIO_FREQ_MHZ = 433.775
 
 CS = digitalio.DigitalInOut(board.GP21)
 RESET = digitalio.DigitalInOut(board.GP20)
