@@ -40,7 +40,12 @@ spi = busio.SPI(board.GP18, MOSI=board.GP19, MISO=board.GP16)
 print("Initializing LoRa module...")
 rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, RADIO_FREQ_MHZ, baudrate=1000000)
 rfm9x.tx_power = 23
+# Configure MeshCom modulation: SF11/CR4⁄6/BW250
+rfm9x.spreading_factor = 11
+rfm9x.coding_rate = 6
+rfm9x.signal_bandwidth = 250000
 print(f"LoRa initialized at {RADIO_FREQ_MHZ} MHz")
+print(f"Modulation: SF{rfm9x.spreading_factor}/CR4⁄{rfm9x.coding_rate}/BW{rfm9x.signal_bandwidth//1000}")
 
 # MeshCom Protocol Constants
 HW_ID_TLORA = 0x03  # TLora hardware ID
