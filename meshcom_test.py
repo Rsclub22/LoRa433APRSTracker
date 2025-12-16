@@ -3,6 +3,9 @@
 MeshCom Protocol Implementation - Standalone Test File
 This implements the MeshCom text messaging protocol exactly as used in MeshCom firmware.
 
+Frequency: 433.175 MHz (MeshCom standard)
+Modulation: SF11, CR 4/6, BW 250kHz
+
 Protocol Format:
 Byte 0: Payload type (':' for messages = 0x3A)
 Byte 1-4: Message ID (32-bit, LSB first)

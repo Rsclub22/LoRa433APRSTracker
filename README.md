@@ -6,16 +6,7 @@
 
 [PCB - RF.Guru LoRA APRS Tracker Automotive 433Mhz](https://shop.rf.guru/products/2023-p-521) 512mW Power
 
-## Features
-
-- SmartBeaconing with configurable profiles (car, bike, hiker)
-- GPS tracking with position reporting
-- LoRa APRS protocol support
-- **NEW: Text messaging support** - Send and receive text messages via LoRa (see [TEXT_MESSAGING.md](TEXT_MESSAGING.md))
-- Telemetry data transmission
-- I2C sensor support (BME680, SHTC3)
-- Voltage monitoring with alerts
-- Low power consumption
+**Note:** Frequency set to 433.175 MHz for MeshCom protocol compatibility. Test implementation available in `meshcom_test.py`.
 
 # Installation procedure #
 Connect the device to our computer using a UBC-C cable; do not connect the 13.8v Powerpole connector !!!; a drive labeled 'RPI-RP2' will appear. 
