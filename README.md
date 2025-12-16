@@ -6,8 +6,6 @@
 
 [PCB - RF.Guru LoRA APRS Tracker Automotive 433Mhz](https://shop.rf.guru/products/2023-p-521) 512mW Power
 
-**Note:** Frequency set to 433.175 MHz for MeshCom protocol compatibility. Test implementation available in `meshcom_test.py`.
-
 # Installation procedure #
 Connect the device to our computer using a UBC-C cable; do not connect the 13.8v Powerpole connector !!!; a drive labeled 'RPI-RP2' will appear. 
 
