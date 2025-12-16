@@ -42,7 +42,7 @@ rfm9x.tx_power = 23
 print(f"LoRa initialized at {RADIO_FREQ_MHZ} MHz")
 
 # MeshCom Protocol Constants
-HW_ID_RP2040 = 0x0A  # TLora hardware ID
+HW_ID_TLORA = 0x03  # TLora hardware ID
 MOD_SF11_CR46_BW250 = 0x03
 FIRMWARE_VERSION = 0x01
 FIRMWARE_SUB_VERSION = ord('#')
@@ -89,7 +89,7 @@ def encode_meshcom_message(source_call, destination, text, msg_id, max_hop=5):
     buffer.append(0x00)
     
     # Hardware ID
-    buffer.append(HW_ID_RP2040)
+    buffer.append(HW_ID_TLORA)
     
     # Modulation ID
     buffer.append(MOD_SF11_CR46_BW250)
