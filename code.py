@@ -20,6 +20,10 @@ from watchdog import WatchDogMode
 
 import config
 
+# Text messaging support
+if config.textMessaging:
+    from text_messaging import MessageQueue, APRSMessage, parse_serial_input
+
 # ============================================================
 #       SYSTEM STARTUP
 # ============================================================
@@ -180,6 +184,13 @@ try:
 
     if not (0 <= config.bme680_tempOffset <= 99):
         raise AttributeError("bme680_tempOffset must be 0–99")
+
+    # --- Text messaging validation ---
+    if not isinstance(config.textMessaging, bool):
+        raise AttributeError("textMessaging must be True/False")
+    
+    if not (5 <= config.messageQueueSize <= 50):
+        raise AttributeError("messageQueueSize must be 5–50")
 
     # --- SmartBeaconing validation ---
     if not isinstance(config.smartBeaconing, bool):
@@ -373,6 +384,160 @@ aprs = APRS()
 
 
 # ============================================================
+#       TEXT MESSAGE SENDING HELPER
+# ============================================================
+
+def send_text_message(destination, text, msg_id=None):
+    """Send a text message via LoRa"""
+    global msg_counter
+    
+    if not config.textMessaging:
+        return False
+    
+    try:
+        # Format APRS message
+        if msg_id is None:
+            msg_counter = (msg_counter + 1) % 1000
+            msg_id = str(msg_counter)
+        
+        message = APRSMessage.format_message(
+            config.callsign,
+            destination,
+            text,
+            msg_id
+        )
+        
+        print(purple("TX MSG: " + message))
+        
+        # Send via LoRa
+        loraLED.value = True
+        
+        if config.hasPa:
+            amp.value = True
+            time.sleep(0.25)
+        
+        rfm9x.send(
+            w,
+            b"<" +
+            binascii.unhexlify("FF") +
+            binascii.unhexlify("01") +
+            bytes(message, "UTF-8")
+        )
+        
+        if config.hasPa:
+            time.sleep(0.1)
+            amp.value = False
+        
+        loraLED.value = False
+        return True
+        
+    except Exception as e:
+        print(red("TX MSG ERROR: " + str(e)))
+        return False
+
+
+def check_serial_input():
+    """Check for serial input and parse message commands"""
+    if not config.textMessaging:
+        return
+    
+    if serial and serial.in_waiting > 0:
+        try:
+            line = serial.readline()
+            if line:
+                input_str = line.decode('utf-8', errors='ignore').strip()
+                
+                # Parse message command
+                result = parse_serial_input(input_str)
+                if result:
+                    destination, text = result
+                    msg_queue.add(destination, text)
+                    print(green("Message queued for " + destination))
+                else:
+                    # Echo other input for debugging
+                    if len(input_str) > 0 and not input_str.startswith('MSG:'):
+                        print(yellow("Unknown command: " + input_str))
+        except Exception as e:
+            if config.fullDebug:
+                print(red("Serial error: " + str(e)))
+
+
+def handle_received_packet(packet_str):
+    """Handle received LoRa packet - check if it's a message"""
+    if not config.textMessaging:
+        return
+    
+    try:
+        msg_data = APRSMessage.parse_message(packet_str)
+        
+        if msg_data:
+            # Check if message is for us or broadcast
+            to_call = msg_data['to'].strip().upper()
+            our_call = config.callsign.upper()
+            
+            # Extract base callsign (without SSID)
+            our_base = our_call.split('-')[0] if '-' in our_call else our_call
+            to_base = to_call.split('-')[0] if '-' in to_call else to_call
+            
+            is_for_us = (to_base == our_base or to_call == 'CQ' or to_call == '*')
+            
+            if is_for_us:
+                if msg_data['is_ack']:
+                    print(green("ACK from {}: {}".format(
+                        msg_data['from'], msg_data['text']
+                    )))
+                elif msg_data['is_rej']:
+                    print(yellow("REJ from {}: {}".format(
+                        msg_data['from'], msg_data['text']
+                    )))
+                else:
+                    # Regular message
+                    print(green("=" * 50))
+                    print(green("MESSAGE from {}".format(msg_data['from'])))
+                    print(green("To: {}".format(msg_data['to'])))
+                    print(green("Text: {}".format(msg_data['text'])))
+                    if msg_data['msg_id']:
+                        print(green("ID: {}".format(msg_data['msg_id'])))
+                    print(green("=" * 50))
+                    
+                    # Send ACK if message has ID and is directly to us
+                    if msg_data['msg_id'] and to_base == our_base:
+                        time.sleep(0.5)  # Brief delay before ACK
+                        ack_msg = APRSMessage.format_ack(
+                            config.callsign,
+                            msg_data['from'],
+                            msg_data['msg_id']
+                        )
+                        
+                        try:
+                            loraLED.value = True
+                            if config.hasPa:
+                                amp.value = True
+                                time.sleep(0.25)
+                            
+                            rfm9x.send(
+                                w,
+                                b"<" +
+                                binascii.unhexlify("FF") +
+                                binascii.unhexlify("01") +
+                                bytes(ack_msg, "UTF-8")
+                            )
+                            
+                            if config.hasPa:
+                                time.sleep(0.1)
+                                amp.value = False
+                            loraLED.value = False
+                            
+                            print(purple("Sent ACK to " + msg_data['from']))
+                        except Exception as e:
+                            print(red("ACK send error: " + str(e)))
+                            
+    except Exception as e:
+        if config.fullDebug:
+            print(red("Message parse error: " + str(e)))
+
+
+# ============================================================
 #       LORA MODULE INITIALIZATION
 # ============================================================
 
@@ -504,6 +669,15 @@ skip_first_bme680 = True
 frozen_lat = None
 frozen_lon = None
 
+# Text messaging
+if config.textMessaging:
+    msg_queue = MessageQueue(config.messageQueueSize)
+    msg_counter = 0  # Message ID counter
+    print(green("Text messaging enabled"))
+    print(yellow("Send messages via serial: MSG:DESTINATION:message text"))
+    print(yellow("Example: MSG:*:Hello everyone"))
+    print(yellow("Example: MSG:CALL-1:Private message"))
+
 # ============================================================
 #       MAIN LOOP — GPS UPDATE + SMARTBEACON DECISION ENGINE
 # ============================================================
@@ -531,6 +705,51 @@ def freeze_position_if_stationary(lat, lon, speed):
 
 while True:
     w.feed()
+
+    # ------------------------------------------------------------
+    #    SERIAL INPUT CHECK (TEXT MESSAGING)
+    # ------------------------------------------------------------
+    if config.textMessaging:
+        check_serial_input()
+    
+    # ------------------------------------------------------------
+    #    CHECK FOR INCOMING LORA MESSAGES
+    # ------------------------------------------------------------
+    if config.textMessaging:
+        try:
+            packet = rfm9x.receive(timeout=0.1)
+            if packet is not None:
+                try:
+                    # Decode packet
+                    packet_text = packet.decode('utf-8', errors='ignore')
+                    
+                    # Strip LoRa header if present
+                    if packet_text.startswith('<'):
+                        # Remove '<' and first 2 bytes (FF 01)
+                        if len(packet_text) > 3:
+                            packet_text = packet_text[3:]
+                    
+                    if config.fullDebug:
+                        print(purple("RX: " + packet_text))
+                    
+                    # Handle message
+                    handle_received_packet(packet_text)
+                    
+                except Exception as e:
+                    if config.fullDebug:
+                        print(red("Packet decode error: " + str(e)))
+        except Exception as e:
+            if config.fullDebug:
+                print(red("RX error: " + str(e)))
+    
+    # ------------------------------------------------------------
+    #    PROCESS MESSAGE QUEUE
+    # ------------------------------------------------------------
+    if config.textMessaging and msg_queue.has_messages():
+        msg = msg_queue.get_next()
+        if msg:
+            send_text_message(msg['destination'], msg['text'])
+            time.sleep(0.5)  # Brief delay after sending
 
     # ------------------------------------------------------------
     #    GPS UPDATE

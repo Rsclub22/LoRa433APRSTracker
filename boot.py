@@ -43,7 +43,7 @@ time.sleep(1)
 gpsRST.value = True
 time.sleep(1)
 
-usb_cdc.enable(console=True, data=False)
+usb_cdc.enable(console=True, data=True)
 
 new_name = "APRSTRKR"
 storage.remount("/", readonly=False)

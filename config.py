@@ -33,6 +33,10 @@ i2cEnabled = True
 i2cDevices = ["BME680"]
 bme680_tempOffset = 0
 
+# Text messaging
+textMessaging = True        # Enable/disable text messaging feature
+messageQueueSize = 10       # Max number of pending outgoing messages
+
 
 
 # ------------------------------------------------------------
