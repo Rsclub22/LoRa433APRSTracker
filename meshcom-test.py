@@ -50,8 +50,8 @@ print(f"Modulation: SF{rfm9x.spreading_factor}/CR4⁄{rfm9x.coding_rate}/BW{rfm9
 # MeshCom Protocol Constants
 HW_ID_TLORA = 0x03  # TLora hardware ID
 MOD_SF11_CR46_BW250 = 0x03
-FIRMWARE_VERSION = 0x01
-FIRMWARE_SUB_VERSION = ord('#')
+FIRMWARE_VERSION = 0x04  # Version 4.35i - Major version 4
+FIRMWARE_SUB_VERSION = ord('i')  # Version 4.35i - Sub-version 'i' (0x69)
 
 # Node ID file for persistence
 NODE_ID_FILE = "/node_id.txt"
@@ -89,6 +89,69 @@ NODE_ID = load_or_generate_node_id()
 
 # Message counter
 msg_counter = 0
+
+
+def encode_meshcom_hey_packet(source_call, msg_id, max_hop=5):
+    """
+    Encode a MeshCom protocol HEY/announcement packet
+    
+    This packet announces the node's presence to the MeshCom network.
+    
+    Format:
+    Byte 0: 'H' (0x48) = HEY/announcement packet type
+    Bytes 1-4: Message ID (32-bit LSB first)
+    Byte 5: MAX_HOP + flags
+    Bytes 6+: SOURCE callsign
+    Byte N: 0x00 (terminator)
+    Byte N+1: Hardware ID
+    Byte N+2: Modulation ID
+    Bytes N+3-4: FCS checksum (16-bit sum, big-endian)
+    Byte N+5: Firmware version
+    Byte N+6: Last hardware
+    Byte N+7: Firmware sub-version
+    Byte N+8: 0x7E (end marker)
+    """
+    buffer = bytearray()
+    
+    # Payload type - HEY packet
+    buffer.append(ord('H'))
+    
+    # Message ID (32-bit LSB first)
+    buffer.extend(struct.pack('<I', msg_id))
+    
+    # MAX_HOP
+    hop_byte = max_hop & 0x07
+    buffer.append(hop_byte)
+    
+    # SOURCE callsign
+    buffer.extend(source_call.upper().encode('utf-8'))
+    
+    # Terminator
+    buffer.append(0x00)
+    
+    # Hardware ID
+    buffer.append(HW_ID_TLORA)
+    
+    # Modulation ID
+    buffer.append(MOD_SF11_CR46_BW250)
+    
+    # FCS: Sum of all bytes
+    fcs = sum(buffer) & 0xFFFF
+    buffer.extend(struct.pack('>H', fcs))
+    
+    # Firmware version
+    buffer.append(FIRMWARE_VERSION)
+    
+    # Last hardware
+    buffer.append(0x00)
+    
+    # Firmware sub-version
+    buffer.append(FIRMWARE_SUB_VERSION)
+    
+    # End marker
+    buffer.append(0x7E)
+    
+    return bytes(buffer)
 
 
 def encode_meshcom_message(source_call, destination, text, msg_id, max_hop=5):
@@ -176,6 +239,42 @@ print(f"Source: {SOURCE_CALL}")
 print(f"Destination: {DESTINATION}")
 print(f"Frequency: {RADIO_FREQ_MHZ} MHz")
 print(f"Message: {TEST_MESSAGE}")
+
+# Send HEY packet at startup to announce presence
+print("\n=== Sending initial HEY packet to announce node ===")
+try:
+    # Generate message ID for HEY packet
+    hey_msg_id = generate_msg_id()
+    
+    # Encode HEY packet
+    hey_packet = encode_meshcom_hey_packet(SOURCE_CALL, hey_msg_id)
+    
+    # Display HEY packet info
+    print(f"HEY Packet:")
+    print(f"  MSG_ID: 0x{hey_msg_id:08X}")
+    print(f"  Size: {len(hey_packet)} bytes")
+    print(f"  Hex: {hey_packet.hex()}")
+    
+    # Enable PA
+    amp.value = True
+    time.sleep(0.1)
+    
+    # Send HEY packet via LoRa
+    rfm9x.send(w, hey_packet)
+    
+    # Disable PA
+    amp.value = False
+    
+    print("  Status: HEY packet sent OK")
+    print("=== Node announced to MeshCom network ===\n")
+    
+    # Wait a moment before starting regular transmissions
+    time.sleep(2)
+    
+except Exception as e:
+    print(f"Error sending HEY packet: {e}")
+    amp.value = False
+
 print("\nSending messages every 5 seconds...")
 print("Press Ctrl+C to stop\n")
 
