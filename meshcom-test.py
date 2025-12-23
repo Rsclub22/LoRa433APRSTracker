@@ -50,8 +50,8 @@ print(f"Modulation: SF{rfm9x.spreading_factor}/CR4⁄{rfm9x.coding_rate}/BW{rfm9
 # MeshCom Protocol Constants
 HW_ID_TLORA = 0x03  # TLora hardware ID
 MOD_SF11_CR46_BW250 = 0x03
-FIRMWARE_VERSION = 0x01
-FIRMWARE_SUB_VERSION = ord('#')
+FIRMWARE_VERSION = 0x04  # Version 4.35i - Major version 4
+FIRMWARE_SUB_VERSION = ord('i')  # Version 4.35i - Sub-version 'i' (0x69)
 
 # Node ID file for persistence
 NODE_ID_FILE = "/node_id.txt"
