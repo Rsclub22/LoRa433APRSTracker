@@ -21,6 +21,8 @@ import microcontroller
 import supervisor
 from microcontroller import watchdog as w
 
+import config
+
 # Stop autoreloading
 supervisor.runtime.autoreload = False
 
@@ -255,15 +257,17 @@ try:
     print(f"  Size: {len(hey_packet)} bytes")
     print(f"  Hex: {hey_packet.hex()}")
     
-    # Enable PA
-    amp.value = True
-    time.sleep(0.1)
+    # Enable PA if configured
+    if config.hasPa:
+        amp.value = True
+        time.sleep(0.1)
     
     # Send HEY packet via LoRa
     rfm9x.send(w, hey_packet)
     
-    # Disable PA
-    amp.value = False
+    # Disable PA if configured
+    if config.hasPa:
+        amp.value = False
     
     print("  Status: HEY packet sent OK")
     print("=== Node announced to MeshCom network ===\n")
@@ -273,7 +277,8 @@ try:
     
 except Exception as e:
     print(f"Error sending HEY packet: {e}")
-    amp.value = False
+    if config.hasPa:
+        amp.value = False
 
 print("\nSending messages every 5 seconds...")
 print("Press Ctrl+C to stop\n")
@@ -298,15 +303,17 @@ while True:
         print(f"  Size: {len(meshcom_packet)} bytes")
         print(f"  Hex: {meshcom_packet.hex()}")
         
-        # Enable PA
-        amp.value = True
-        time.sleep(0.1)
+        # Enable PA if configured
+        if config.hasPa:
+            amp.value = True
+            time.sleep(0.1)
         
         # Send via LoRa
         rfm9x.send(w, meshcom_packet)
         
-        # Disable PA
-        amp.value = False
+        # Disable PA if configured
+        if config.hasPa:
+            amp.value = False
         
         print("  Status: Sent OK\n")
         
@@ -315,9 +322,11 @@ while True:
         
     except KeyboardInterrupt:
         print("\nTest stopped by user")
-        amp.value = False
+        if config.hasPa:
+            amp.value = False
         break
     except Exception as e:
         print(f"Error: {e}")
-        amp.value = False
+        if config.hasPa:
+            amp.value = False
         time.sleep(1)

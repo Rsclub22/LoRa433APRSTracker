@@ -13,7 +13,7 @@ fullDebug = False
 
 # Radio settings
 power = 23          # 5–23 dBm
-hasPa = True        # PA adds ~6 dBm
+hasPa = False       # PA adds ~6 dBm (Set to False for USB-C development to prevent damage)
 
 # APRS identification
 callsign = "--CALL--"

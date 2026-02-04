@@ -36,8 +36,9 @@ rfm9x.tx_power = 23
 
 message = "testsdhkjfklsdhjfklsdjfklsjfklsjfklsfklsdjfklsdjflkjskljskldjflks"
 while True:
-    amp.value = True
-    time.sleep(0.1)
+    if config.hasPa:
+        amp.value = True
+        time.sleep(0.1)
     print("LoRa send message: " + message)
     rfm9x.send(
         w,
@@ -46,6 +47,7 @@ while True:
         + binascii.unhexlify("01")
         + bytes("{}".format(message), "UTF-8"),
     )
-    amp.value = False
+    if config.hasPa:
+        amp.value = False
     time.sleep(0.2)
 
