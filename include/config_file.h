@@ -140,6 +140,16 @@ extern FS FatFS;
 #define DEFAULT_MESH_SF        8
 #define DEFAULT_MESH_CR        8
 #define DEFAULT_MESH_PREAMBLE  16
+// --- MeshCom (tx-only position beacon) ---
+#define DEFAULT_MESHCOM_ENABLED    false
+#define DEFAULT_MESHCOM_INTERVAL   900
+#define DEFAULT_MESHCOM_MAX_HOP    2
+#define DEFAULT_MESHCOM_FREQ       433.175f
+#define DEFAULT_MESHCOM_BW         250.0f
+#define DEFAULT_MESHCOM_SF         11
+#define DEFAULT_MESHCOM_CR         6
+#define DEFAULT_MESHCOM_PREAMBLE   8
+#define DEFAULT_MESHCOM_HWID       0
 // Refuse to transmit at all while a computer is attached, rather than
 // dropping to usbPaDrive. For a port that cannot supply even the
 // floor drive.
@@ -259,6 +269,15 @@ struct TrackerConfig {
     int    meshSf;
     int    meshCr;
     int    meshPreamble;
+    bool   meshComEnabled;
+    int    meshComInterval;
+    int    meshComMaxHop;
+    int    meshComHardwareId;
+    float  meshComFrequency;
+    float  meshComBandwidth;
+    int    meshComSf;
+    int    meshComCr;
+    int    meshComPreamble;
     float  loraFrequency;
     char   radioChip[12];
     char   loraTcxo[8];
@@ -334,6 +353,15 @@ static void configSetDefaults(TrackerConfig &cfg) {
     cfg.meshSf = DEFAULT_MESH_SF;
     cfg.meshCr = DEFAULT_MESH_CR;
     cfg.meshPreamble = DEFAULT_MESH_PREAMBLE;
+    cfg.meshComEnabled = DEFAULT_MESHCOM_ENABLED;
+    cfg.meshComInterval = DEFAULT_MESHCOM_INTERVAL;
+    cfg.meshComMaxHop = DEFAULT_MESHCOM_MAX_HOP;
+    cfg.meshComHardwareId = DEFAULT_MESHCOM_HWID;
+    cfg.meshComFrequency = DEFAULT_MESHCOM_FREQ;
+    cfg.meshComBandwidth = DEFAULT_MESHCOM_BW;
+    cfg.meshComSf = DEFAULT_MESHCOM_SF;
+    cfg.meshComCr = DEFAULT_MESHCOM_CR;
+    cfg.meshComPreamble = DEFAULT_MESHCOM_PREAMBLE;
     cfg.loraFrequency = DEFAULT_LORA_FREQ;
     strncpy(cfg.radioChip, DEFAULT_RADIO_CHIP, sizeof(cfg.radioChip));
     strncpy(cfg.loraTcxo, DEFAULT_LORA_TCXO, sizeof(cfg.loraTcxo));
@@ -496,6 +524,30 @@ static void configSetValue(TrackerConfig &cfg, const char *key, const char *val)
         cfg.meshCr = constrain(atoi(val), 5, 8);
     } else if (strcasecmp(key, "meshPreamble") == 0) {
         cfg.meshPreamble = constrain(atoi(val), 6, 64);
+    } else if (strcasecmp(key, "meshComEnabled") == 0) {
+        cfg.meshComEnabled = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
+    } else if (strcasecmp(key, "meshComInterval") == 0) {
+        cfg.meshComInterval = constrain(atoi(val), 60, 86400);
+    } else if (strcasecmp(key, "meshComMaxHop") == 0) {
+        cfg.meshComMaxHop = constrain(atoi(val), 0, 7);
+    } else if (strcasecmp(key, "meshComHardwareId") == 0) {
+        cfg.meshComHardwareId = constrain(atoi(val), 0, 127);
+    } else if (strcasecmp(key, "meshComFrequency") == 0) {
+        cfg.meshComFrequency = constrain((float)atof(val), 430.0f, 434.960f);
+    } else if (strcasecmp(key, "meshComBandwidth") == 0) {
+        float bw = (float)atof(val);
+        const float ok[] = { 7.8f, 10.4f, 15.6f, 20.8f, 31.25f,
+                             41.7f, 62.5f, 125.0f, 250.0f, 500.0f };
+        cfg.meshComBandwidth = DEFAULT_MESHCOM_BW;
+        for (unsigned i = 0; i < sizeof(ok) / sizeof(ok[0]); i++) {
+            if (fabsf(bw - ok[i]) < 0.01f) { cfg.meshComBandwidth = bw; break; }
+        }
+    } else if (strcasecmp(key, "meshComSf") == 0) {
+        cfg.meshComSf = constrain(atoi(val), 6, 12);
+    } else if (strcasecmp(key, "meshComCr") == 0) {
+        cfg.meshComCr = constrain(atoi(val), 5, 8);
+    } else if (strcasecmp(key, "meshComPreamble") == 0) {
+        cfg.meshComPreamble = constrain(atoi(val), 6, 64);
     } else if (strcasecmp(key, "loraFrequency") == 0) {
         cfg.loraFrequency = atof(val);
     } else if (strcasecmp(key, "radioChip") == 0) {
@@ -635,6 +687,17 @@ static const char *CONFIG_TEMPLATE =
     "meshRoute=direct\n"
     "meshInterval=900\n"
     "\n"
+    "# --- MeshCom (tx-only position beacon) ---\n"
+    "meshComEnabled=false\n"
+    "meshComInterval=900\n"
+    "meshComMaxHop=2\n"
+    "meshComHardwareId=0\n"
+    "meshComFrequency=433.175\n"
+    "meshComBandwidth=250.0\n"
+    "meshComSf=11\n"
+    "meshComCr=6\n"
+    "meshComPreamble=8\n"
+    "\n"
     "# --- Debug ---\n"
     "fullDebug=false\n";
 
@@ -729,6 +792,17 @@ f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.
     f.println("# direct still reaches APRS-IS without re-flooding the mesh");
     f.println("meshRoute=direct");
     f.println("meshInterval=900");
+    f.println("");
+    f.println("# --- MeshCom (tx-only position beacon) ---");
+    f.println("meshComEnabled=false");
+    f.println("meshComInterval=900");
+    f.println("meshComMaxHop=2");
+    f.println("meshComHardwareId=0");
+    f.println("meshComFrequency=433.175");
+    f.println("meshComBandwidth=250.0");
+    f.println("meshComSf=11");
+    f.println("meshComCr=6");
+    f.println("meshComPreamble=8");
     f.println("");
     f.println("fullDebug=false");
     f.close();
