@@ -568,12 +568,19 @@ bool TrackerRadio::setMode(RadioMode m, const TrackerConfig &cfg,
     // beacon into the MeshCore passband.
     activeMode = RADIO_MODE_UNKNOWN;
 
-    const bool mesh = (m == RADIO_MODE_MESH);
-    const float    freq      = mesh ? cfg.meshFrequency : cfg.loraFrequency;
-    const float    bw        = mesh ? cfg.meshBandwidth : LORA_BW_KHZ;
-    const uint8_t  sf        = mesh ? (uint8_t)cfg.meshSf : LORA_SF;
-    const uint8_t  cr        = mesh ? (uint8_t)cfg.meshCr : LORA_CR;
-    const uint16_t preamble  = mesh ? (uint16_t)cfg.meshPreamble : LORA_PREAMBLE;
+    const bool meshCore = (m == RADIO_MODE_MESHCORE);
+    const bool meshCom  = (m == RADIO_MODE_MESHCOM);
+    const bool mesh = meshCore || meshCom;
+    const float    freq      = meshCore ? cfg.meshFrequency
+                              : (meshCom ? cfg.meshComFrequency : cfg.loraFrequency);
+    const float    bw        = meshCore ? cfg.meshBandwidth
+                              : (meshCom ? cfg.meshComBandwidth : LORA_BW_KHZ);
+    const uint8_t  sf        = meshCore ? (uint8_t)cfg.meshSf
+                              : (meshCom ? (uint8_t)cfg.meshComSf : LORA_SF);
+    const uint8_t  cr        = meshCore ? (uint8_t)cfg.meshCr
+                              : (meshCom ? (uint8_t)cfg.meshComCr : LORA_CR);
+    const uint16_t preamble  = meshCore ? (uint16_t)cfg.meshPreamble
+                              : (meshCom ? (uint16_t)cfg.meshComPreamble : LORA_PREAMBLE);
 
     // Bandwidth, spreading factor and coding rate live on the concrete
     // drivers rather than PhysicalLayer, so the branch is unavoidable.

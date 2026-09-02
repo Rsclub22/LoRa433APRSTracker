@@ -23,6 +23,7 @@
 #include "smartbeacon.h"
 #include "radio.h"
 #include "meshcore.h"
+#include "meshcom.h"
 
 // ============================================================
 // VERSION
@@ -96,6 +97,8 @@ static unsigned long lastCommentSent = 0;
 static bool          commentSent = false;
 static unsigned long lastMeshAdvert = 0;
 static bool          meshAdvertSent = false;
+static unsigned long lastMeshComAdvert = 0;
+static bool          meshComAdvertSent = false;
 
 static const uint16_t SEQ_COMMIT_EVERY = 64;
 static uint16_t sequence = 0;
@@ -853,6 +856,25 @@ static void sendMeshAdvert(float lat, float lon) {
         red("MESH ADVERT FAILED");
     }
 
+    static void sendMeshComAdvert(float lat, float lon, float altM) {
+        digitalWrite(PIN_LED_LORA, HIGH);
+
+        int8_t drive = currentDrive();
+        char buf[128];
+        snprintf(buf, sizeof(buf), "TX MESHCOM: %s @ %.5f,%.5f (%d dBm)",
+                 cfg.callsign, lat, lon, drive);
+        purple(buf);
+
+        if (!MeshCom::sendPosition(cfg, cfg.callsign, lat, lon, altM, drive)) {
+            red("MESHCOM POSITION FAILED");
+        }
+
+        digitalWrite(PIN_LED_LORA, LOW);
+        lastMeshComAdvert = millis();
+        meshComAdvertSent = true;
+        watchdog_update();
+    }
+
     digitalWrite(PIN_LED_LORA, LOW);
     lastMeshAdvert = millis();
     meshAdvertSent = true;
@@ -1127,6 +1149,13 @@ void setup() {
                  cfg.meshRoute, cfg.meshInterval);
         yellow(cfgMsg);
     }
+    if (cfg.meshComEnabled) {
+        snprintf(cfgMsg, sizeof(cfgMsg),
+                 "MeshCom: %.3f MHz BW%.1f SF%d CR4:%d hop=%d every %ds",
+                 cfg.meshComFrequency, cfg.meshComBandwidth, cfg.meshComSf,
+                 cfg.meshComCr, cfg.meshComMaxHop, cfg.meshComInterval);
+        yellow(cfgMsg);
+    }
 
     if (cfg.fullDebug && cfg.voltage) {
         // Raw counts alongside the volts, so one boot with a meter on the
@@ -1382,9 +1411,14 @@ void loop() {
     bool meshDue = cfg.meshEnabled && MeshCore::ready() &&
                    (!meshAdvertSent ||
                     (nowMs - lastMeshAdvert) >= (unsigned long)cfg.meshInterval * 1000UL);
+    bool meshComDue = cfg.meshComEnabled &&
+                      (!meshComAdvertSent ||
+                       (nowMs - lastMeshComAdvert) >=
+                           (unsigned long)cfg.meshComInterval * 1000UL);
 
     // Nothing to do?
-    if (!sendBeacon && pendingVoltAlert < 0 && !metadataDue && !meshDue && !alertDue) {
+    if (!sendBeacon && pendingVoltAlert < 0 &&
+        !metadataDue && !meshDue && !meshComDue && !alertDue) {
         delay(50);
         return;
     }
@@ -1396,6 +1430,12 @@ void loop() {
     // between the frames of something else. Yielding costs one 50 ms pass.
     if (meshDue && !sendBeacon && pendingVoltAlert < 0 && !metadataDue) {
         sendMeshAdvert(lat, lon);
+        delay(50);
+        return;
+    }
+
+    if (meshComDue && !sendBeacon && pendingVoltAlert < 0 && !metadataDue) {
+        sendMeshComAdvert(lat, lon, altM);
         delay(50);
         return;
     }

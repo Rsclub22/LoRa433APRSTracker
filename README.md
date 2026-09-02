@@ -231,9 +231,24 @@ and an advert has no room for it either.
   because a repeater gates a position before deciding whether to forward it,
   but keeps a moving station from re-flooding the whole mesh.
 - **meshInterval** - seconds between adverts (default `900`)
+- **meshComEnabled** - enable tx-only MeshCom position beacons (`true`/`false`,
+  default `false`)
+- **meshComInterval** - seconds between MeshCom beacons (default `900`)
+- **meshComMaxHop** - MeshCom hop count (0..7, default `2`)
+- **meshComHardwareId** - MeshCom HWID in trailer (0..127, default `0`)
+- **meshComFrequency** / **meshComBandwidth** / **meshComSf** /
+  **meshComCr** / **meshComPreamble** - MeshCom RF profile (defaults:
+  433.175 MHz, 250 kHz, SF11, CR4:6, preamble 8)
 
 Adverts wait for a GPS fix: MeshCore stamps them with real time and the
 tracker has no clock of its own, so there is no mesh presence indoors.
+
+### MeshCom
+
+The tracker can also send tx-only MeshCom position frames, similar to MeshCore:
+it retunes the radio to a dedicated MeshCom profile for one frame, transmits,
+then returns to APRS. MeshCom and MeshCore transmissions are scheduled on their
+own loop passes so profile switches never land between APRS frames.
 
 ### What `power` means depends on the board
 
