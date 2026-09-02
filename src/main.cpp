@@ -856,28 +856,28 @@ static void sendMeshAdvert(float lat, float lon) {
         red("MESH ADVERT FAILED");
     }
 
-    static void sendMeshComAdvert(float lat, float lon, float altM) {
-        digitalWrite(PIN_LED_LORA, HIGH);
-
-        int8_t drive = currentDrive();
-        char buf[128];
-        snprintf(buf, sizeof(buf), "TX MESHCOM: %s @ %.5f,%.5f (%d dBm)",
-                 cfg.callsign, lat, lon, drive);
-        purple(buf);
-
-        if (!MeshCom::sendPosition(cfg, cfg.callsign, lat, lon, altM, drive)) {
-            red("MESHCOM POSITION FAILED");
-        }
-
-        digitalWrite(PIN_LED_LORA, LOW);
-        lastMeshComAdvert = millis();
-        meshComAdvertSent = true;
-        watchdog_update();
-    }
-
     digitalWrite(PIN_LED_LORA, LOW);
     lastMeshAdvert = millis();
     meshAdvertSent = true;
+    watchdog_update();
+}
+
+static void sendMeshComAdvert(float lat, float lon, float altM) {
+    digitalWrite(PIN_LED_LORA, HIGH);
+
+    int8_t drive = currentDrive();
+    char buf[128];
+    snprintf(buf, sizeof(buf), "TX MESHCOM: %s @ %.5f,%.5f (%d dBm)",
+             cfg.callsign, lat, lon, drive);
+    purple(buf);
+
+    if (!MeshCom::sendPosition(cfg, cfg.callsign, lat, lon, altM, drive)) {
+        red("MESHCOM POSITION FAILED");
+    }
+
+    digitalWrite(PIN_LED_LORA, LOW);
+    lastMeshComAdvert = millis();
+    meshComAdvertSent = true;
     watchdog_update();
 }
 

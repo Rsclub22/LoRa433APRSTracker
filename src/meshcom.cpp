@@ -5,6 +5,8 @@
 #include "meshcom.h"
 
 #include <hardware/watchdog.h>
+#include <math.h>
+#include <string.h>
 
 #include "pins.h"
 #include "radio.h"
