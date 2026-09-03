@@ -18,12 +18,19 @@ zero warnings; treat any warning as introduced by your change. Do not delete
 `.pio/`: on a machine with no global library store it is the only copy of the
 dependencies, and removing it turns an offline build into a networked one.
 
-`pio run -t uploadfs` overwrites `config.txt` on the device and will destroy
-the owner's callsign and settings - and `/meshid.bin`, the station's MeshCore
-identity, which cannot be regenerated without changing its address on the
-mesh. A firmware `.uf2` writes only the sketch region, so ordinary flashing
-leaves the filesystem alone. Back up both before anything that touches the
-filesystem.
+`pio run -t uploadfs` does not work on this board and never has: the
+platform's target builds a **LittleFS** image ("Building file system image
+from 'data' directory to .pio/build/pico/littlefs.bin") regardless of
+`board_build.filesystem = fatfs`, so it writes LittleFS into the FatFS
+region. The firmware then finds no valid FAT, reformats, and writes a fresh
+default `config.txt` - so uploadfs does not merely overwrite the owner's
+callsign and settings, it discards `data/config.txt` too and leaves the
+factory defaults. `/meshid.bin`, the station's MeshCore identity, goes with
+it, and cannot be regenerated without changing its address on the mesh.
+Provision `config.txt` the way the README does: copy it onto the mounted
+drive and eject. A firmware `.uf2` writes only the sketch region, so ordinary
+flashing leaves the filesystem alone. Back up both before anything that
+touches the filesystem.
 
 **Editing `config.txt` only takes effect if the drive is *ejected*.** Writing
 it and then `diskutil unmount`-ing, or unmounting and then flashing, loses the
@@ -148,6 +155,45 @@ formats are verified against `../meshcore-repeater` (`src/packet.h`,
   AES takes those 16 bytes, the HMAC takes them zero-padded to 32.
 - Crypto for this is vendored in `lib/meshcrypto` **from the repeater tree**,
   not reimplemented, so the two cannot drift apart.
+
+## MeshCom
+
+`src/meshcom.cpp` is a second, unrelated mesh: transmit-only position
+beacons and private messages on the MeshCom network (433.175, 250 kHz,
+SF11, CR4:6). Unlike the MeshCore path it was written without a reference
+tree to check against, and two of its settings were wrong on the air for
+exactly that reason. Both are now verified against
+`icssw-org/MeshCom-Firmware` (branch `dev`).
+
+- **MeshCom does not use the 0x12 sync word.** It uses 0x2b:
+  `SYNC_WORD_SX127x 0x2b` in `src/configuration_global.h`, and
+  `Radio.SetCustomSyncWord(0x242b)` in `src/lora_setchip.cpp`. A node
+  listening on 0x242b never sees a 0x12 preamble, so getting this wrong
+  fails *silently* - the console prints TX MESHCOM, the frame is on the
+  air, and the mesh is deaf to it. This is the only profile that changes
+  the sync word, so `setMode()` restores 0x12 on the way back out; forget
+  that and MeshCom silences APRS instead.
+- **RadioLib cannot set 0x242b directly.** Its `SX126x::setSyncWord(sync,
+  ctrl)` interleaves the two arguments, so the register pair comes from
+  `sync=0x22, ctrl=0x4b`. `src/radio.cpp` carries the derivation - the
+  numbers look like typos otherwise.
+- **The preamble is 32, not 8** (`DEFAULT_PREAMPLE_LENGTH`), and upstream
+  notes it is "Same for Tx and Rx".
+- **The frame is verified against `extras/decode_meshcom.py`** in that
+  tree, which is the cheapest available oracle: type, message id, hop
+  byte, APRS-shaped text, then `[zero, hardware_id, lora_mod, fcs, fw,
+  lasthw, fw_subver, ending]`. The FCS is a byte sum sent high byte
+  first; that decoder swaps the halves before comparing, which is the
+  same statement inverted.
+- **A message is only shown by a node whose own callsign, group
+  membership (`CheckOwnGroup`) or `*` matches the destination.** A node
+  receiving a message for someone else still decodes and logs it, so
+  "it arrives as TXT but not in the mailbox" means the frame is right
+  and the *destination* is not. `*` is the way to prove the path.
+- `meshComInterval=smart` hangs the position off the same SmartBeacon
+  decision as APRS, with a 60 s floor. It is sent on the pass *after*
+  the beacon, never the same one - the retune rule above applies here
+  too.
 
 ## V2: transmitting on USB power
 
