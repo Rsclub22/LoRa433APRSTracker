@@ -85,6 +85,9 @@ battSettle=5
 alertChannel=
 alertMention=
 alertAprsCall=
+# MeshCom destination for the same alerts, as a private message: a callsign,
+# a group number, or * for "Messages to All". Needs meshComEnabled=true.
+alertMeshComCall=
 alertInterval=60
 
 # --- Parked ---
@@ -111,6 +114,20 @@ meshNodeType=chat
 # direct still reaches APRS-IS without re-flooding the mesh
 meshRoute=direct
 meshInterval=900
+
+# --- MeshCom (tx-only position beacon and messages) ---
+meshComEnabled=false
+# seconds, or "smart" to follow the APRS SmartBeacon (60s floor)
+meshComInterval=900
+meshComMaxHop=2
+meshComHardwareId=0
+# MeshCom's own profile - note the sync word differs from APRS and is
+# handled in firmware, not here
+meshComFrequency=433.175
+meshComBandwidth=250.0
+meshComSf=11
+meshComCr=6
+meshComPreamble=32
 
 # --- Debug ---
 fullDebug=false

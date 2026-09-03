@@ -158,6 +158,11 @@ place for chatter nobody asked for.
   where obscuring meaning is not permitted anyway.
 - **alertMention** - prefixed to the text, e.g. `@OR7F`
 - **alertAprsCall** - callsign to send an APRS message to, e.g. `OR7F-1`
+- **alertMeshComCall** - MeshCom destination for the same alerts, sent as a
+  private message. A callsign (`OR7F-90`), a group number (`9`), or `*` for
+  MeshCom's "Messages to All". Needs `meshComEnabled=true`. Unlike the
+  MeshCore channel this needs no clock, so boot and watchdog alerts go out
+  before the first GPS fix
 - **alertInterval** - minimum seconds between alerts, default `60`
 
 What gets sent: the supply moving, the battery falling and recovering,
@@ -233,12 +238,13 @@ and an advert has no room for it either.
 - **meshInterval** - seconds between adverts (default `900`)
 - **meshComEnabled** - enable tx-only MeshCom position beacons (`true`/`false`,
   default `false`)
-- **meshComInterval** - seconds between MeshCom beacons (default `900`)
+- **meshComInterval** - seconds between MeshCom beacons (default `900`), or
+  `smart` to send one whenever the APRS SmartBeacon fires, with a 60 s floor
 - **meshComMaxHop** - MeshCom hop count (0..7, default `2`)
 - **meshComHardwareId** - MeshCom HWID in trailer (0..127, default `0`)
 - **meshComFrequency** / **meshComBandwidth** / **meshComSf** /
   **meshComCr** / **meshComPreamble** - MeshCom RF profile (defaults:
-  433.175 MHz, 250 kHz, SF11, CR4:6, preamble 8)
+  433.175 MHz, 250 kHz, SF11, CR4:6, preamble 32)
 
 Adverts wait for a GPS fix: MeshCore stamps them with real time and the
 tracker has no clock of its own, so there is no mesh presence indoors.
@@ -249,6 +255,16 @@ The tracker can also send tx-only MeshCom position frames, similar to MeshCore:
 it retunes the radio to a dedicated MeshCom profile for one frame, transmits,
 then returns to APRS. MeshCom and MeshCore transmissions are scheduled on their
 own loop passes so profile switches never land between APRS frames.
+
+MeshCom uses its own sync word (0x2b), not the 0x12 that APRS and MeshCore
+share, so the profile switch changes that too and puts it back afterwards.
+
+Besides positions it can send private messages: set `alertMeshComCall` and
+the tracker's alerts - boot, watchdog reset, supply steps, low battery -
+arrive as MeshCom messages. A node only files a message it can address:
+its own callsign, a group it has joined, or `*`. One addressed elsewhere is
+still received and logged, so a message that shows up as passing traffic
+but not in the mailbox is a destination problem, not a framing one.
 
 ### What `power` means depends on the board
 

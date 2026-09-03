@@ -98,6 +98,10 @@ static bool          commentSent = false;
 static unsigned long lastMeshAdvert = 0;
 static bool          meshAdvertSent = false;
 static unsigned long lastMeshComAdvert = 0;
+// meshComInterval=smart: the mesh position follows the APRS beacon, no
+// closer together than this.
+static const unsigned long MESHCOM_SMART_FLOOR_MS = 60000UL;
+static bool meshComFollow = false;   // SmartBeacon fired, mesh frame owed
 static bool          meshComAdvertSent = false;
 
 static const uint16_t SEQ_COMMIT_EVERY = 64;
@@ -401,7 +405,8 @@ static unsigned long alertLastSent = 0;
 static bool          alertSent = false;
 
 static void alertQueue(const char *text) {
-    if (!cfg.alertChannel[0] && !cfg.alertAprsCall[0]) return;   // nowhere to send
+    if (!cfg.alertChannel[0] && !cfg.alertAprsCall[0] &&
+        !cfg.alertMeshComCall[0]) return;   // nowhere to send
     if (alertCount == ALERT_SLOTS) {
         alertHead = (uint8_t)((alertHead + 1) % ALERT_SLOTS);
         alertCount--;
@@ -831,6 +836,20 @@ static void alertFlush() {
         sendAprsMessage(cfg.alertAprsCall, text);
         sent = true;
     }
+    // MeshCom needs no timestamp, so unlike the MeshCore channel this path
+    // also works indoors and before the first fix - which is exactly when a
+    // boot or watchdog alert is worth having.
+    if (cfg.alertMeshComCall[0] && cfg.meshComEnabled) {
+        char buf[160];
+        snprintf(buf, sizeof(buf), "TX MESHCOM PM %s: %s", cfg.alertMeshComCall, text);
+        purple(buf);
+        if (MeshCom::sendMessage(cfg, cfg.callsign, cfg.alertMeshComCall, text,
+                                 currentDrive())) {
+            sent = true;
+        } else {
+            red("MESHCOM PM FAILED");
+        }
+    }
 
     if (sent || !cfg.alertChannel[0]) {   // drop it either way rather than spin
         alertHead = (uint8_t)((alertHead + 1) % ALERT_SLOTS);
@@ -877,6 +896,7 @@ static void sendMeshComAdvert(float lat, float lon, float altM) {
 
     digitalWrite(PIN_LED_LORA, LOW);
     lastMeshComAdvert = millis();
+    meshComFollow = false;
     meshComAdvertSent = true;
     watchdog_update();
 }
@@ -1411,10 +1431,20 @@ void loop() {
     bool meshDue = cfg.meshEnabled && MeshCore::ready() &&
                    (!meshAdvertSent ||
                     (nowMs - lastMeshAdvert) >= (unsigned long)cfg.meshInterval * 1000UL);
-    bool meshComDue = cfg.meshComEnabled &&
-                      (!meshComAdvertSent ||
-                       (nowMs - lastMeshComAdvert) >=
-                           (unsigned long)cfg.meshComInterval * 1000UL);
+    // In "smart" mode the mesh position is owed whenever SmartBeacon put one
+    // on APRS. It stays owed if the floor blocks it rather than being
+    // dropped, so a beacon burst still yields one mesh frame afterwards.
+    bool meshComDue;
+    if (cfg.meshComSmart) {
+        meshComDue = cfg.meshComEnabled && meshComFollow &&
+                     (!meshComAdvertSent ||
+                      (nowMs - lastMeshComAdvert) >= MESHCOM_SMART_FLOOR_MS);
+    } else {
+        meshComDue = cfg.meshComEnabled &&
+                     (!meshComAdvertSent ||
+                      (nowMs - lastMeshComAdvert) >=
+                          (unsigned long)cfg.meshComInterval * 1000UL);
+    }
 
     // Nothing to do?
     if (!sendBeacon && pendingVoltAlert < 0 &&
@@ -1596,6 +1626,9 @@ void loop() {
         purple(buf);
         loraSendText(frame);
         sb.updateAfterBeacon(lat, lon);
+        // Not sent from here: a retune must not land between this frame and
+        // whatever else this pass is doing. The next pass picks it up.
+        if (cfg.meshComSmart) meshComFollow = true;
     }
 
     // Metadata if due

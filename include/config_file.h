@@ -99,6 +99,7 @@ extern FS FatFS;
 #define DEFAULT_ALERT_CHANNEL  ""     // MeshCore public channel, e.g. #mbox
 #define DEFAULT_ALERT_MENTION  ""     // prefixed to the text, e.g. @OR7F
 #define DEFAULT_ALERT_APRS     ""     // APRS callsign to message, e.g. OR7F-1
+#define DEFAULT_ALERT_MESHCOM  ""     // MeshCom callsign to PM, e.g. OR7F-90
 #define DEFAULT_ALERT_INTERVAL 60     // minimum seconds between alerts
 
 #define DEFAULT_SB_PARKED_AFTER  14400  // 4 hours
@@ -143,12 +144,16 @@ extern FS FatFS;
 // --- MeshCom (tx-only position beacon) ---
 #define DEFAULT_MESHCOM_ENABLED    false
 #define DEFAULT_MESHCOM_INTERVAL   900
+#define DEFAULT_MESHCOM_SMART      false
 #define DEFAULT_MESHCOM_MAX_HOP    2
 #define DEFAULT_MESHCOM_FREQ       433.175f
 #define DEFAULT_MESHCOM_BW         250.0f
 #define DEFAULT_MESHCOM_SF         11
 #define DEFAULT_MESHCOM_CR         6
-#define DEFAULT_MESHCOM_PREAMBLE   8
+// 32, matching MeshCom's DEFAULT_PREAMPLE_LENGTH - its own comment on
+// LORA_PREAMBLE_LENGTH is "Same for Tx and Rx", so a short preamble
+// risks falling outside the receivers' detection window.
+#define DEFAULT_MESHCOM_PREAMBLE   32
 #define DEFAULT_MESHCOM_HWID       0
 // Refuse to transmit at all while a computer is attached, rather than
 // dropping to usbPaDrive. For a port that cannot supply even the
@@ -255,6 +260,7 @@ struct TrackerConfig {
     char   alertChannel[20];
     char   alertMention[16];
     char   alertAprsCall[16];
+    char   alertMeshComCall[16];
     int    alertInterval;
     int    sbParkedAfter;
     int    sbParkedRate;
@@ -271,6 +277,7 @@ struct TrackerConfig {
     int    meshPreamble;
     bool   meshComEnabled;
     int    meshComInterval;
+    bool   meshComSmart;   // follow SmartBeacon instead of the interval
     int    meshComMaxHop;
     int    meshComHardwareId;
     float  meshComFrequency;
@@ -339,6 +346,7 @@ static void configSetDefaults(TrackerConfig &cfg) {
     strncpy(cfg.alertChannel, DEFAULT_ALERT_CHANNEL, sizeof(cfg.alertChannel));
     strncpy(cfg.alertMention, DEFAULT_ALERT_MENTION, sizeof(cfg.alertMention));
     strncpy(cfg.alertAprsCall, DEFAULT_ALERT_APRS, sizeof(cfg.alertAprsCall));
+    strncpy(cfg.alertMeshComCall, DEFAULT_ALERT_MESHCOM, sizeof(cfg.alertMeshComCall));
     cfg.alertInterval = DEFAULT_ALERT_INTERVAL;
     cfg.sbParkedAfter = DEFAULT_SB_PARKED_AFTER;
     cfg.sbParkedRate = DEFAULT_SB_PARKED_RATE;
@@ -355,6 +363,7 @@ static void configSetDefaults(TrackerConfig &cfg) {
     cfg.meshPreamble = DEFAULT_MESH_PREAMBLE;
     cfg.meshComEnabled = DEFAULT_MESHCOM_ENABLED;
     cfg.meshComInterval = DEFAULT_MESHCOM_INTERVAL;
+    cfg.meshComSmart = DEFAULT_MESHCOM_SMART;
     cfg.meshComMaxHop = DEFAULT_MESHCOM_MAX_HOP;
     cfg.meshComHardwareId = DEFAULT_MESHCOM_HWID;
     cfg.meshComFrequency = DEFAULT_MESHCOM_FREQ;
@@ -485,6 +494,9 @@ static void configSetValue(TrackerConfig &cfg, const char *key, const char *val)
     } else if (strcasecmp(key, "alertAprsCall") == 0) {
         strncpy(cfg.alertAprsCall, val, sizeof(cfg.alertAprsCall) - 1);
         for (char *q = cfg.alertAprsCall; *q; q++) *q = toupper(*q);
+    } else if (strcasecmp(key, "alertMeshComCall") == 0) {
+        strncpy(cfg.alertMeshComCall, val, sizeof(cfg.alertMeshComCall) - 1);
+        for (char *q = cfg.alertMeshComCall; *q; q++) *q = toupper(*q);
     } else if (strcasecmp(key, "alertInterval") == 0) {
         cfg.alertInterval = constrain(atoi(val), 10, 3600);
     } else if (strcasecmp(key, "sbParkedAfter") == 0) {
@@ -527,7 +539,17 @@ static void configSetValue(TrackerConfig &cfg, const char *key, const char *val)
     } else if (strcasecmp(key, "meshComEnabled") == 0) {
         cfg.meshComEnabled = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
     } else if (strcasecmp(key, "meshComInterval") == 0) {
-        cfg.meshComInterval = constrain(atoi(val), 60, 86400);
+        // A number of seconds, or "smart" to hang the mesh position off the
+        // same SmartBeacon decision that drives APRS - the same way
+        // commentInterval takes "always". "smart" ignores this number and
+        // uses MESHCOM_SMART_FLOOR_S as its floor instead, so a vehicle
+        // beaconing every 60 s in traffic cannot flood the mesh.
+        if (strcasecmp(val, "smart") == 0) {
+            cfg.meshComSmart = true;
+        } else {
+            cfg.meshComSmart = false;
+            cfg.meshComInterval = constrain(atoi(val), 60, 86400);
+        }
     } else if (strcasecmp(key, "meshComMaxHop") == 0) {
         cfg.meshComMaxHop = constrain(atoi(val), 0, 7);
     } else if (strcasecmp(key, "meshComHardwareId") == 0) {
@@ -661,6 +683,7 @@ static const char *CONFIG_TEMPLATE =
     "alertChannel=\n"
     "alertMention=\n"
     "alertAprsCall=\n"
+    "alertMeshComCall=\n"
     "alertInterval=60\n"
     "\n"
     "# --- Parked ---\n"
@@ -696,7 +719,7 @@ static const char *CONFIG_TEMPLATE =
     "meshComBandwidth=250.0\n"
     "meshComSf=11\n"
     "meshComCr=6\n"
-    "meshComPreamble=8\n"
+    "meshComPreamble=32\n"
     "\n"
     "# --- Debug ---\n"
     "fullDebug=false\n";
@@ -768,6 +791,8 @@ static bool configCreateDefault() {
     f.println("alertChannel=");
     f.println("alertMention=");
     f.println("alertAprsCall=");
+    f.println("# MeshCom destination for alerts: a callsign, a group number, or *");
+    f.println("alertMeshComCall=");
     f.println("alertInterval=60");
     f.println("");
     f.println("# --- Parked ---");
@@ -795,6 +820,7 @@ f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.
     f.println("");
     f.println("# --- MeshCom (tx-only position beacon) ---");
     f.println("meshComEnabled=false");
+    f.println("# seconds, or \"smart\" to follow the APRS SmartBeacon");
     f.println("meshComInterval=900");
     f.println("meshComMaxHop=2");
     f.println("meshComHardwareId=0");
@@ -802,7 +828,7 @@ f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.
     f.println("meshComBandwidth=250.0");
     f.println("meshComSf=11");
     f.println("meshComCr=6");
-    f.println("meshComPreamble=8");
+    f.println("meshComPreamble=32");
     f.println("");
     f.println("fullDebug=false");
     f.close();

@@ -61,20 +61,18 @@ static bool meshComPayload(char *out, size_t outLen, const TrackerConfig &cfg,
 
 }  // namespace
 
-bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
-                           float lat, float lon, float altMeters, int8_t drive) {
-    if (!callsign || !callsign[0]) return false;
-
-    char payload[96];
-    if (!meshComPayload(payload, sizeof(payload), cfg, lat, lon, altMeters)) return false;
-
-    char aprs[140];
-    snprintf(aprs, sizeof(aprs), "%s>*!%s", callsign, payload);
-
-    uint8_t frame[255];
+// One MeshCom frame: data type identifier, message id, hop/mesh byte, the
+// APRS-shaped text, then the trailer the decoder in the upstream tree reads
+// back as [zero, hardware_id, lora_mod, fcs, fw, lasthw, fw_subver, ending]
+// (extras/decode_meshcom.py). The FCS is a plain byte sum over everything
+// ahead of it, high byte first - that decoder swaps the halves before
+// comparing, which is the same thing said backwards.
+static size_t meshComFrame(uint8_t *frame, size_t frameLen,
+                           const TrackerConfig &cfg, uint8_t dti,
+                           const char *aprs) {
     size_t n = 0;
 
-    frame[n++] = 0x21;  // position
+    frame[n++] = dti;
     uint32_t msgId = meshComMsgId++;
     frame[n++] = (uint8_t)(msgId & 0xFF);
     frame[n++] = (uint8_t)((msgId >> 8) & 0xFF);
@@ -82,8 +80,8 @@ bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
     frame[n++] = (uint8_t)((msgId >> 24) & 0xFF);
     frame[n++] = (uint8_t)((cfg.meshComMaxHop & 0x0F) | 0x10);
 
-    size_t aprsLen = strnlen(aprs, sizeof(aprs));
-    if (n + aprsLen + 10 >= sizeof(frame)) return false;
+    size_t aprsLen = strlen(aprs);
+    if (n + aprsLen + 10 >= frameLen) return 0;
     memcpy(frame + n, aprs, aprsLen);
     n += aprsLen;
 
@@ -101,7 +99,14 @@ bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
     frame[n++] = (uint8_t)(0x80 | hw);
     frame[n++] = 0x23;  // '#'
     frame[n++] = 0x7E;
+    return n;
+}
 
+// Retune, key up, and come back to APRS. Leaving the radio on the MeshCom
+// profile would silence the tracker's main product, so the way back runs
+// even when the transmit itself failed.
+static bool meshComTransmit(const TrackerConfig &cfg, const uint8_t *frame,
+                            size_t n, int8_t drive) {
     char err[64];
     bool ok = false;
     if (TrackerRadio::setMode(RADIO_MODE_MESHCOM, cfg, err, sizeof(err))) {
@@ -115,4 +120,48 @@ bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
         Serial.printf("\x1b[1;5;31mRADIO STUCK OFF-PROFILE: %s\x1b[0m\r\n", err);
     }
     return ok;
+}
+
+bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
+                           float lat, float lon, float altMeters, int8_t drive) {
+    if (!callsign || !callsign[0]) return false;
+
+    char payload[96];
+    if (!meshComPayload(payload, sizeof(payload), cfg, lat, lon, altMeters)) return false;
+
+    char aprs[140];
+    snprintf(aprs, sizeof(aprs), "%s>*!%s", callsign, payload);
+
+    uint8_t frame[255];
+    size_t n = meshComFrame(frame, sizeof(frame), cfg, 0x21, aprs);
+    if (!n) return false;
+    return meshComTransmit(cfg, frame, n, drive);
+}
+
+// A private message. The wire shape is the same frame with ':' as the data
+// type identifier and SOURCE>TARGET: ahead of the text - the upstream
+// decoder splits on '>' and then on the DTI character itself, so the colon
+// after the target is structural rather than decoration.
+//
+// The trailing {NNN is MeshCom's ack request. This tracker cannot receive,
+// so no ack will ever arrive; it is sent anyway because a node that gets a
+// message without one treats it as an ack-less broadcast and some clients
+// then decline to show it in the message list.
+bool MeshCom::sendMessage(const TrackerConfig &cfg, const char *callsign,
+                          const char *target, const char *text, int8_t drive) {
+    if (!callsign || !callsign[0]) return false;
+    if (!target || !target[0]) return false;
+    if (!text || !text[0]) return false;
+
+    static uint16_t ackCounter = 1;
+
+    char aprs[190];
+    snprintf(aprs, sizeof(aprs), "%s>%s:%s{%03u", callsign, target, text,
+             (unsigned)(ackCounter % 1000));
+    ackCounter++;
+
+    uint8_t frame[255];
+    size_t n = meshComFrame(frame, sizeof(frame), cfg, 0x3A, aprs);
+    if (!n) return false;
+    return meshComTransmit(cfg, frame, n, drive);
 }

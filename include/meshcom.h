@@ -14,4 +14,9 @@ namespace MeshCom {
 bool sendPosition(const TrackerConfig &cfg, const char *callsign,
                   float lat, float lon, float altMeters, int8_t drive);
 
+// Build and transmit one MeshCom private message to a target callsign.
+// Same retune, same return to APRS.
+bool sendMessage(const TrackerConfig &cfg, const char *callsign,
+                 const char *target, const char *text, int8_t drive);
+
 }  // namespace MeshCom
