@@ -120,7 +120,9 @@ meshComEnabled=false
 # seconds, or "smart" to follow the APRS SmartBeacon (60s floor)
 meshComInterval=900
 meshComMaxHop=2
-meshComHardwareId=0
+# 1=TLORA_V2. This board is not in MeshCom's hardware table, so it borrows
+# the closest plain SX127x node - 0 means "no info" and may not be shown.
+meshComHardwareId=1
 # MeshCom's own profile - note the sync word differs from APRS and is
 # handled in firmware, not here
 meshComFrequency=433.175

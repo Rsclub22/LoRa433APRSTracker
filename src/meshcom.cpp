@@ -13,7 +13,28 @@
 
 namespace {
 
-static uint32_t meshComMsgId = 1;
+// The message id is not a free counter. A receiving node remembers the last
+// MAX_DEDUP_RING ids it has seen (60..100 depending on the board, see
+// dedup_functions.cpp upstream) and silently discards a frame whose id is
+// already in that ring - regardless of who sent it. A tracker that starts
+// counting at 1 on every boot therefore has its first frames after a reboot
+// dropped by any node that was listening before it, with nothing in either
+// log to say so.
+//
+// Upstream splits the 32 bits the way loop_functions.cpp does:
+// ((_GW_ID & 0x3FFFFF) << 10) | (node_msgid & 0x3FF) - the node's own
+// identity in the top 22 bits, a rolling counter in the bottom 10. This does
+// the same, with the identity hashed from the callsign so two trackers never
+// share a space, and the counter seeded per boot from the hardware RNG so a
+// restart does not replay ids that are still in a neighbour's ring.
+static uint32_t meshComNodeId = 0;
+static uint16_t meshComCounter = 0;
+
+static uint32_t meshComNextMsgId() {
+    uint32_t id = ((meshComNodeId & 0x3FFFFFUL) << 10) | (meshComCounter & 0x3FF);
+    meshComCounter = (uint16_t)((meshComCounter + 1) & 0x3FF);
+    return id;
+}
 
 static uint8_t meshComModulation(const TrackerConfig &cfg) {
     const float bw = cfg.meshComBandwidth;
@@ -69,16 +90,23 @@ static bool meshComPayload(char *out, size_t outLen, const TrackerConfig &cfg,
 // comparing, which is the same thing said backwards.
 static size_t meshComFrame(uint8_t *frame, size_t frameLen,
                            const TrackerConfig &cfg, uint8_t dti,
-                           const char *aprs) {
+                           const char *aprs, bool track = false) {
     size_t n = 0;
 
     frame[n++] = dti;
-    uint32_t msgId = meshComMsgId++;
+    uint32_t msgId = meshComNextMsgId();
     frame[n++] = (uint8_t)(msgId & 0xFF);
     frame[n++] = (uint8_t)((msgId >> 8) & 0xFF);
     frame[n++] = (uint8_t)((msgId >> 16) & 0xFF);
     frame[n++] = (uint8_t)((msgId >> 24) & 0xFF);
-    frame[n++] = (uint8_t)((cfg.meshComMaxHop & 0x0F) | 0x10);
+    // Byte 5 carries the hop count in its low nibble and flags in the high
+    // one: 0x10 mesh, 0x20 app-offline, 0x40 track (aprs_functions.cpp,
+    // encodeAPRS). Upstream sets track on a position that went out because
+    // the station moved rather than because the timer expired, which is
+    // what meshComInterval=smart produces.
+    uint8_t hop = (uint8_t)((cfg.meshComMaxHop & 0x0F) | 0x10);
+    if (track) hop |= 0x40;
+    frame[n++] = hop;
 
     size_t aprsLen = strlen(aprs);
     if (n + aprsLen + 10 >= frameLen) return 0;
@@ -122,8 +150,19 @@ static bool meshComTransmit(const TrackerConfig &cfg, const uint8_t *frame,
     return ok;
 }
 
+void MeshCom::begin(const char *callsign, uint16_t seed) {
+    uint32_t h = 2166136261UL;                  // FNV-1a over the callsign
+    for (const char *p = callsign; p && *p; p++) {
+        h ^= (uint8_t)*p;
+        h *= 16777619UL;
+    }
+    meshComNodeId = h & 0x3FFFFFUL;
+    meshComCounter = (uint16_t)(seed & 0x3FF);
+}
+
 bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
-                           float lat, float lon, float altMeters, int8_t drive) {
+                           float lat, float lon, float altMeters, int8_t drive,
+                           bool track) {
     if (!callsign || !callsign[0]) return false;
 
     char payload[96];
@@ -133,7 +172,7 @@ bool MeshCom::sendPosition(const TrackerConfig &cfg, const char *callsign,
     snprintf(aprs, sizeof(aprs), "%s>*!%s", callsign, payload);
 
     uint8_t frame[255];
-    size_t n = meshComFrame(frame, sizeof(frame), cfg, 0x21, aprs);
+    size_t n = meshComFrame(frame, sizeof(frame), cfg, 0x21, aprs, track);
     if (!n) return false;
     return meshComTransmit(cfg, frame, n, drive);
 }

@@ -154,7 +154,14 @@ extern FS FatFS;
 // LORA_PREAMBLE_LENGTH is "Same for Tx and Rx", so a short preamble
 // risks falling outside the receivers' detection window.
 #define DEFAULT_MESHCOM_PREAMBLE   32
-#define DEFAULT_MESHCOM_HWID       0
+// The hardware id a receiving node looks up in its own table
+// (mheard_functions.cpp getHardwareLong(): 1 TLORA_V2, 2 TLORA_V1,
+// 3 TLORA_V2_1_1p6, 4 TBEAM, 7 T_ECHO, 8 TDECK, 9 RAK4631 ... and a remap
+// for the ids above 38). This board is not in that table, so it borrows the
+// closest plain SX127x node: id 0 is literally "no info", and a station that
+// reports it is at best displayed as unknown hardware and at worst dropped
+// by the gateways on the way to the map.
+#define DEFAULT_MESHCOM_HWID       1
 // Refuse to transmit at all while a computer is attached, rather than
 // dropping to usbPaDrive. For a port that cannot supply even the
 // floor drive.
@@ -714,7 +721,7 @@ static const char *CONFIG_TEMPLATE =
     "meshComEnabled=false\n"
     "meshComInterval=900\n"
     "meshComMaxHop=2\n"
-    "meshComHardwareId=0\n"
+    "meshComHardwareId=1\n"
     "meshComFrequency=433.175\n"
     "meshComBandwidth=250.0\n"
     "meshComSf=11\n"
@@ -823,7 +830,8 @@ f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.
     f.println("# seconds, or \"smart\" to follow the APRS SmartBeacon");
     f.println("meshComInterval=900");
     f.println("meshComMaxHop=2");
-    f.println("meshComHardwareId=0");
+    f.println("# 1=TLORA_V2 - this board is not in MeshCom's own table");
+    f.println("meshComHardwareId=1");
     f.println("meshComFrequency=433.175");
     f.println("meshComBandwidth=250.0");
     f.println("meshComSf=11");

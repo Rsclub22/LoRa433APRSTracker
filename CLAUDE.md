@@ -190,10 +190,33 @@ exactly that reason. Both are now verified against
   receiving a message for someone else still decodes and logs it, so
   "it arrives as TXT but not in the mailbox" means the frame is right
   and the *destination* is not. `*` is the way to prove the path.
+- **The message id is a dedup key, not a counter.** A receiving node
+  remembers the last MAX_DEDUP_RING ids it saw - 60..100 depending on
+  the board - and drops a repeat *regardless of sender*
+  (`dedup_functions.cpp`, `checkOwnRx`). Ids that restarted at 1 on every
+  boot therefore had the first frames after each reflash silently
+  discarded, which is most of what looked like "MeshCom is flaky". They
+  now follow upstream: node identity hashed from the callsign in the top
+  22 bits, a counter seeded from `rp2040.hwrand32()` in the low 10.
+- **`meshComHardwareId=0` means "no info"**, not "unset" - it is index 0
+  of the table in `mheard_functions.cpp`. The default is 1 (TLORA_V2),
+  the closest plain SX127x node, because this board has no id of its own
+  and a station reporting 0 may not reach the map. Ids above 38 are
+  remapped by `getHardwareLong()`, which is why a T-Deck Plus reports 46
+  and displays as index 17.
+- **An alert needs no GPS.** It carries no position and the MeshCom path
+  needs no timestamp, so the flush sits *above* the date gate in `loop()`,
+  next to the forced-metadata send. Below it the queue was unreachable
+  without a fix, which `alertFlush()`'s own comment already claimed it
+  was not. This is also the only way to test the mesh path on a bench
+  with no GPS antenna: every reboot puts one PM on the air.
 - `meshComInterval=smart` hangs the position off the same SmartBeacon
   decision as APRS, with a 60 s floor. It is sent on the pass *after*
   the beacon, never the same one - the retune rule above applies here
-  too.
+  too. It also sets the frame's track bit (0x40 in byte 5), matching
+  upstream's rule that anything sent off the POSINFO interval is
+  movement-driven - a node's own manual `--sendpos` reports T1 for the
+  same reason.
 
 ## V2: transmitting on USB power
 

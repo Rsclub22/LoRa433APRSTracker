@@ -241,7 +241,11 @@ and an advert has no room for it either.
 - **meshComInterval** - seconds between MeshCom beacons (default `900`), or
   `smart` to send one whenever the APRS SmartBeacon fires, with a 60 s floor
 - **meshComMaxHop** - MeshCom hop count (0..7, default `2`)
-- **meshComHardwareId** - MeshCom HWID in trailer (0..127, default `0`)
+- **meshComHardwareId** - MeshCom HWID in the frame trailer (0..127,
+  default `1` = TLORA_V2). This board has no id of its own, so it reports
+  the closest plain SX127x node. `0` is MeshCom's "no info" and a station
+  sending it may not reach the map through a gateway. Other useful values:
+  `2` TLORA_V1, `3` TLORA_V2_1_1p6, `4` TBEAM, `7` T_ECHO, `9` RAK4631.
 - **meshComFrequency** / **meshComBandwidth** / **meshComSf** /
   **meshComCr** / **meshComPreamble** - MeshCom RF profile (defaults:
   433.175 MHz, 250 kHz, SF11, CR4:6, preamble 32)

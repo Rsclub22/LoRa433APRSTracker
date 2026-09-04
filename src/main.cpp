@@ -890,7 +890,8 @@ static void sendMeshComAdvert(float lat, float lon, float altM) {
              cfg.callsign, lat, lon, drive);
     purple(buf);
 
-    if (!MeshCom::sendPosition(cfg, cfg.callsign, lat, lon, altM, drive)) {
+    if (!MeshCom::sendPosition(cfg, cfg.callsign, lat, lon, altM, drive,
+                               cfg.meshComSmart)) {
         red("MESHCOM POSITION FAILED");
     }
 
@@ -1110,6 +1111,15 @@ void setup() {
     snprintf(cfgMsg, sizeof(cfgMsg), "Sequence start at: %d", sequence);
     yellow(cfgMsg);
 
+    // The MeshCom message id rides on the same persisted counter: a receiving
+    // node drops an id it has already seen, so the ids must not restart at
+    // the same place after every reboot. See src/meshcom.cpp.
+    // hwrand32() rather than the sequence alone: the sequence is only
+    // committed every SEQ_COMMIT_EVERY beacons, so a tracker that has never
+    // completed a block still reads 0 and would seed every boot identically -
+    // exactly the case this is meant to avoid.
+    MeshCom::begin(cfg.callsign, (uint16_t)(rp2040.hwrand32() ^ sequence));
+
     // LoRa init - the radio layer identifies the fitted chip itself
     yellow("Init LoRa");
 
@@ -1322,7 +1332,36 @@ void loop() {
     bool hasFix = gps.location.isValid() && gps.location.age() < 3000;
 
     // Update GPS LED (always)
-    if (!updateGpsLed(hasFix)) {
+    // Keep the LED honest first, then decide - the alert path below returns
+    // early, and skipping the blink for it would stall the no-fix pattern.
+    bool gpsUsable = updateGpsLed(hasFix);
+
+    // Alerts before the first fix.
+    //
+    // An alert carries no position, and the MeshCom path needs no timestamp
+    // either - alertFlush() already skips only the MeshCore channel when
+    // there is no GPS time. So a boot, watchdog or supply notice can go out
+    // with no fix at all, which is exactly when it is worth having: indoors,
+    // or on a bench with the GPS antenna off. Below the date gate it was
+    // unreachable, so the queue simply sat there until the tracker saw sky.
+    //
+    // Only while there is no fix: once GPS is up the pass further down owns
+    // the queue, and running both would put two frames in one loop pass.
+    //
+    // The inhibit has to be repeated here. The gate that normally covers
+    // every transmission sits below the date check, so this pass is ahead of
+    // it and would otherwise key the radio while the supply is still
+    // settling, during the startup hold, or on a port that asked for silence
+    // outright - the same reason the forced-metadata send above carries its
+    // own copy of the condition.
+    if (!hasFix && !metadataForced && alertPending() &&
+        !txInhibited() && !railSettling() && !startupHold()) {
+        alertFlush();
+        delay(50);
+        return;
+    }
+
+    if (!gpsUsable) {
         delay(50);
         return;
     }
