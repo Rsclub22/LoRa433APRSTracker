@@ -103,6 +103,8 @@ static unsigned long lastMeshComAdvert = 0;
 static const unsigned long MESHCOM_SMART_FLOOR_MS = 60000UL;
 static bool meshComFollow = false;   // SmartBeacon fired, mesh frame owed
 static bool          meshComAdvertSent = false;
+static unsigned long lastMeshComHey = 0;
+static bool          meshComHeySent = false;
 
 static const uint16_t SEQ_COMMIT_EVERY = 64;
 static uint16_t sequence = 0;
@@ -881,6 +883,43 @@ static void sendMeshAdvert(float lat, float lon) {
     watchdog_update();
 }
 
+// The percentage the rest of the mesh sends in /B=. There is no fuel gauge
+// on this board, only the supply rail, so this is an estimate and nothing
+// more: a straight line between the two thresholds the owner already tuned
+// for their own supply - battLowVoltage reads 0, battChargeVoltage reads
+// 100. It is not a state of charge, and on a vehicle it will sit at 100
+// whenever the alternator is running. Without a voltage reading configured
+// the field is left out instead of guessed.
+static int meshComBattPercent() {
+    if (!cfg.voltage) return -1;
+    const int lo = cfg.battLowVoltage;
+    const int hi = cfg.battChargeVoltage;
+    if (hi <= lo) return -1;
+
+    const int vx100 = (int)(getVoltage() * 100 + 0.5f);
+    int pct = (int)(((long)(vx100 - lo) * 100) / (hi - lo));
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return pct;
+}
+
+static void sendMeshComHey() {
+    digitalWrite(PIN_LED_LORA, HIGH);
+
+    int8_t drive = currentDrive();
+    char buf[96];
+    snprintf(buf, sizeof(buf), "TX MESHCOM HEY: %s (%d dBm)", cfg.callsign, drive);
+    purple(buf);
+
+    if (!MeshCom::sendHey(cfg, cfg.callsign, drive)) {
+        red("MESHCOM HEY FAILED");
+    }
+
+    digitalWrite(PIN_LED_LORA, LOW);
+    lastMeshComHey = millis();
+    meshComHeySent = true;
+}
+
 static void sendMeshComAdvert(float lat, float lon, float altM) {
     digitalWrite(PIN_LED_LORA, HIGH);
 
@@ -891,7 +930,7 @@ static void sendMeshComAdvert(float lat, float lon, float altM) {
     purple(buf);
 
     if (!MeshCom::sendPosition(cfg, cfg.callsign, lat, lon, altM, drive,
-                               cfg.meshComSmart)) {
+                               meshComBattPercent())) {
         red("MESHCOM POSITION FAILED");
     }
 
@@ -1467,7 +1506,20 @@ void loop() {
     bool metadataDue = metadataForced || ((nowMs - lastMetadataSend) >= 86400000UL);
 
     bool alertDue = alertPending();
-    bool meshDue = cfg.meshEnabled && MeshCore::ready() &&
+    // gpsUnixTime() is part of the condition, not just of the send. An
+    // advert carries a timestamp and sendMeshAdvert() refuses to build one
+    // without real time - but it refuses by returning before it sets
+    // meshAdvertSent or lastMeshAdvert. Left out of the test, meshDue then
+    // stays true forever and the MeshCore branch below, which sits ahead of
+    // the MeshCom and alert branches and returns from the pass, swallows
+    // every single loop iteration: no mesh position, no alerts, nothing,
+    // with the console showing only that beacons still go out.
+    //
+    // Reachable on real hardware too, not only on a bench: the date gate
+    // above tests gps.date, while gpsUnixTime() also requires gps.time, so
+    // a receiver with a valid date and a not-yet-valid time lands exactly
+    // here.
+    bool meshDue = cfg.meshEnabled && MeshCore::ready() && gpsUnixTime() != 0 &&
                    (!meshAdvertSent ||
                     (nowMs - lastMeshAdvert) >= (unsigned long)cfg.meshInterval * 1000UL);
     // In "smart" mode the mesh position is owed whenever SmartBeacon put one
@@ -1485,9 +1537,13 @@ void loop() {
                           (unsigned long)cfg.meshComInterval * 1000UL);
     }
 
+    bool heyDue = cfg.meshComEnabled && cfg.meshComHey &&
+                  (!meshComHeySent ||
+                   (nowMs - lastMeshComHey) >= MESHCOM_HEY_INTERVAL_MS);
+
     // Nothing to do?
     if (!sendBeacon && pendingVoltAlert < 0 &&
-        !metadataDue && !meshDue && !meshComDue && !alertDue) {
+        !metadataDue && !meshDue && !meshComDue && !alertDue && !heyDue) {
         delay(50);
         return;
     }
@@ -1505,6 +1561,14 @@ void loop() {
 
     if (meshComDue && !sendBeacon && pendingVoltAlert < 0 && !metadataDue) {
         sendMeshComAdvert(lat, lon, altM);
+        delay(50);
+        return;
+    }
+
+    // HEY last of the three, and behind the position: if both come due on
+    // the same pass the position is the one worth the airtime.
+    if (heyDue && !sendBeacon && pendingVoltAlert < 0 && !metadataDue) {
+        sendMeshComHey();
         delay(50);
         return;
     }

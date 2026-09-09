@@ -146,14 +146,43 @@ extern FS FatFS;
 #define DEFAULT_MESHCOM_INTERVAL   900
 #define DEFAULT_MESHCOM_SMART      false
 #define DEFAULT_MESHCOM_MAX_HOP    2
+// Upstream carries two hop limits, not one: initAPRS() gives ':' and '@'
+// max_hop_text and everything else max_hop_pos. Every node on the air here
+// shows the same split - positions at H02, messages and HEY at H04.
+#define DEFAULT_MESHCOM_HOP_TEXT   4
+// HEY, the "who hears me" probe, at the rate a normal node settles on.
+// Upstream damps it with a trickle timer (docs/hey-supp.md: Imin 30 s,
+// doubling to Imax 15 min, suppressed when two neighbours' HEYs were
+// heard). A receiver is what makes that safe, and this board has none, so
+// it can never suppress - running the fast end of the ramp would put it on
+// the air more often than any real node. It sends at Imax only.
+#define DEFAULT_MESHCOM_HEY        true
+// The free-text segment of a position: comment, then the name behind a
+// '#'. PositionToAPRS() builds it that way and a node with no comment
+// still sends "#name", so the name is the part that carries.
+#define DEFAULT_MESHCOM_NAME       ""
+#define DEFAULT_MESHCOM_COMMENT    ""
+// Group subscriptions, sent as /R=9;262; at the very end of the position.
+// Empty by default and legitimately so: PositionToAPRS() only emits the
+// field when the node has at least one group, and this radio cannot
+// receive, so declaring a group asks the server to route traffic at a
+// station that will never hear it.
+#define DEFAULT_MESHCOM_GROUPS     ""
+#define MESHCOM_HEY_INTERVAL_MS    900000UL
 #define DEFAULT_MESHCOM_FREQ       433.175f
 #define DEFAULT_MESHCOM_BW         250.0f
 #define DEFAULT_MESHCOM_SF         11
 #define DEFAULT_MESHCOM_CR         6
-// 32, matching MeshCom's DEFAULT_PREAMPLE_LENGTH - its own comment on
-// LORA_PREAMBLE_LENGTH is "Same for Tx and Rx", so a short preamble
-// risks falling outside the receivers' detection window.
-#define DEFAULT_MESHCOM_PREAMBLE   32
+// 8, not the 32 of MeshCom's DEFAULT_PREAMPLE_LENGTH. That constant is the
+// "EU" country profile; the ham networks on this frequency run "EU8",
+// whose entry in lora_setcountry() is labelled "EU Preabble 8" and sets
+// node_preamplebits = 8. The two differ in nothing else. Sending 32 is
+// received perfectly well - a longer preamble always is - but it makes the
+// station the only one on the air with a different profile, and it says so
+// out loud: the country nibble of the modulation byte reads 0 (EU) where
+// every neighbour reads 8 (EU8). It also costs 24 symbols, 197 ms at
+// SF11/250 kHz, on every single frame.
+#define DEFAULT_MESHCOM_PREAMBLE   8
 // The hardware id a receiving node looks up in its own table
 // (mheard_functions.cpp getHardwareLong(): 1 TLORA_V2, 2 TLORA_V1,
 // 3 TLORA_V2_1_1p6, 4 TBEAM, 7 T_ECHO, 8 TDECK, 9 RAK4631 ... and a remap
@@ -286,6 +315,11 @@ struct TrackerConfig {
     int    meshComInterval;
     bool   meshComSmart;   // follow SmartBeacon instead of the interval
     int    meshComMaxHop;
+    int    meshComHopText;
+    bool   meshComHey;
+    char   meshComName[16];
+    char   meshComComment[32];
+    char   meshComGroups[32];
     int    meshComHardwareId;
     float  meshComFrequency;
     float  meshComBandwidth;
@@ -372,6 +406,11 @@ static void configSetDefaults(TrackerConfig &cfg) {
     cfg.meshComInterval = DEFAULT_MESHCOM_INTERVAL;
     cfg.meshComSmart = DEFAULT_MESHCOM_SMART;
     cfg.meshComMaxHop = DEFAULT_MESHCOM_MAX_HOP;
+    cfg.meshComHopText = DEFAULT_MESHCOM_HOP_TEXT;
+    cfg.meshComHey = DEFAULT_MESHCOM_HEY;
+    strncpy(cfg.meshComName, DEFAULT_MESHCOM_NAME, sizeof(cfg.meshComName) - 1);
+    strncpy(cfg.meshComComment, DEFAULT_MESHCOM_COMMENT, sizeof(cfg.meshComComment) - 1);
+    strncpy(cfg.meshComGroups, DEFAULT_MESHCOM_GROUPS, sizeof(cfg.meshComGroups) - 1);
     cfg.meshComHardwareId = DEFAULT_MESHCOM_HWID;
     cfg.meshComFrequency = DEFAULT_MESHCOM_FREQ;
     cfg.meshComBandwidth = DEFAULT_MESHCOM_BW;
@@ -559,6 +598,16 @@ static void configSetValue(TrackerConfig &cfg, const char *key, const char *val)
         }
     } else if (strcasecmp(key, "meshComMaxHop") == 0) {
         cfg.meshComMaxHop = constrain(atoi(val), 0, 7);
+    } else if (strcasecmp(key, "meshComHopText") == 0) {
+        cfg.meshComHopText = constrain(atoi(val), 0, 7);
+    } else if (strcasecmp(key, "meshComName") == 0) {
+        strncpy(cfg.meshComName, val, sizeof(cfg.meshComName) - 1);
+    } else if (strcasecmp(key, "meshComComment") == 0) {
+        strncpy(cfg.meshComComment, val, sizeof(cfg.meshComComment) - 1);
+    } else if (strcasecmp(key, "meshComGroups") == 0) {
+        strncpy(cfg.meshComGroups, val, sizeof(cfg.meshComGroups) - 1);
+    } else if (strcasecmp(key, "meshComHey") == 0) {
+        cfg.meshComHey = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
     } else if (strcasecmp(key, "meshComHardwareId") == 0) {
         cfg.meshComHardwareId = constrain(atoi(val), 0, 127);
     } else if (strcasecmp(key, "meshComFrequency") == 0) {
@@ -721,12 +770,17 @@ static const char *CONFIG_TEMPLATE =
     "meshComEnabled=false\n"
     "meshComInterval=900\n"
     "meshComMaxHop=2\n"
+    "meshComHopText=4\n"
+    "meshComHey=true\n"
+    "meshComName=\n"
+    "meshComComment=\n"
+    "meshComGroups=\n"
     "meshComHardwareId=1\n"
     "meshComFrequency=433.175\n"
     "meshComBandwidth=250.0\n"
     "meshComSf=11\n"
     "meshComCr=6\n"
-    "meshComPreamble=32\n"
+    "meshComPreamble=8\n"
     "\n"
     "# --- Debug ---\n"
     "fullDebug=false\n";
@@ -830,13 +884,23 @@ f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.
     f.println("# seconds, or \"smart\" to follow the APRS SmartBeacon");
     f.println("meshComInterval=900");
     f.println("meshComMaxHop=2");
+    f.println("# hop count for messages and HEY, as upstream splits them");
+    f.println("meshComHopText=4");
+    f.println("# the \"who hears me\" probe every 15 min, like a normal node");
+    f.println("meshComHey=true");
+    f.println("# station name, sent as #name - every real node has one");
+    f.println("meshComName=");
+    f.println("# free text, max 25 chars; avoid spaces, receivers cut there");
+    f.println("meshComComment=");
+    f.println("# group subscriptions, e.g. 9;262; - see the README before setting");
+    f.println("meshComGroups=");
     f.println("# 1=TLORA_V2 - this board is not in MeshCom's own table");
     f.println("meshComHardwareId=1");
     f.println("meshComFrequency=433.175");
     f.println("meshComBandwidth=250.0");
     f.println("meshComSf=11");
     f.println("meshComCr=6");
-    f.println("meshComPreamble=32");
+    f.println("meshComPreamble=8");
     f.println("");
     f.println("fullDebug=false");
     f.close();

@@ -177,8 +177,51 @@ exactly that reason. Both are now verified against
   ctrl)` interleaves the two arguments, so the register pair comes from
   `sync=0x22, ctrl=0x4b`. `src/radio.cpp` carries the derivation - the
   numbers look like typos otherwise.
-- **The preamble is 32, not 8** (`DEFAULT_PREAMPLE_LENGTH`), and upstream
-  notes it is "Same for Tx and Rx".
+- **The preamble picks the country, and the country shows.** MeshCom's
+  `DEFAULT_PREAMPLE_LENGTH` is 32, but that is the plain "EU" country
+  profile; the ham networks on 433.175 run "EU8", whose entry in
+  `lora_setcountry()` is labelled "EU Preabble 8" and sets
+  `node_preamplebits = 8`. Nothing else differs between them. The tell is
+  the modulation byte: upstream builds it as `(getMOD() & 0xF) |
+  (node_country << 4)` and MHeard prints it as country/modulation, so a
+  station on preamble 32 reads `0/8` in a list where every neighbour reads
+  `8/8`. `src/meshcom.cpp` derives the country nibble from the configured
+  preamble rather than carrying a second setting that could disagree with
+  it. Preamble 8 also saves 24 symbols - 197 ms at SF11/250 kHz - on every
+  frame.
+- **The position's free text is `<comment>#<name>`,** and the `#` belongs
+  to the name rather than separating two fields - `PositionToAPRS()` builds
+  `cname` as `"#" + node_name`, so a node with no comment still transmits
+  `#name`. That is why frames like `...31Ev#Anhaenger/B=100/...` appear on
+  the air with the symbol immediately followed by a `#`. The comment is
+  capped at 25 characters and `charset_filter` drops `{ } : ; , /` from it.
+  A space survives that filter but still breaks the field, because
+  `decodeAPRSPOS()` ends the free text at the first space - which is why
+  every station in this network writes its comment with hyphens.
+- **The firmware-version byte in the trailer is a protocol generation.**
+  Three receivers read it: `aprs_functions.cpp:496` discards the entire
+  frame when it is 1..34 ("Packet discarded, wrong FW-version"), and
+  `lora_functions.cpp:763` and `loop_functions.cpp:2992` treat `/A=` as
+  feet and convert it only when it is above 13. This firmware sent its own
+  2.1 as `2`, which put it inside the discard window of every current node
+  and left 541 m displaying as "1775" on the older ones that still
+  accepted it. It now sends 35. Nodes built before that check went in
+  accept anything, which is why a bench pair on February and April builds
+  showed nothing wrong.
+- **Two hop limits, not one.** `initAPRS()` gives `:` and `@` the text
+  limit and everything else the position limit, which is why real nodes
+  send positions at H02 and messages and HEY at H04. `meshComHopText`
+  carries the second one.
+- **HEY (`@`) is the diagnostic this board otherwise cannot have.** It
+  asks who can hear the station, and every node that relays it appends its
+  own RSSI/SNR before passing it on, so the answer accumulates inside the
+  frame and lands in a gateway's RX log and at the server - reachable even
+  though nothing here can receive. Upstream damps it with a trickle timer
+  (`docs/hey-supp.md`: Imin 30 s, doubling to Imax 15 min, suppressed once
+  two neighbours' HEYs are heard). Suppression needs a receiver, so this
+  board sends at Imax and never runs the fast end of the ramp - a
+  transmit-only station running trickle would be louder than any real
+  node, not quieter.
 - **The frame is verified against `extras/decode_meshcom.py`** in that
   tree, which is the cheapest available oracle: type, message id, hop
   byte, APRS-shaped text, then `[zero, hardware_id, lora_mod, fcs, fw,
@@ -213,10 +256,22 @@ exactly that reason. Both are now verified against
 - `meshComInterval=smart` hangs the position off the same SmartBeacon
   decision as APRS, with a 60 s floor. It is sent on the pass *after*
   the beacon, never the same one - the retune rule above applies here
-  too. It also sets the frame's track bit (0x40 in byte 5), matching
-  upstream's rule that anything sent off the POSINFO interval is
-  movement-driven - a node's own manual `--sendpos` reports T1 for the
-  same reason.
+  too.
+- **Never set the track bit (0x40 in byte 5).** It was set for a while on
+  every `smart` position, on the reasoning that upstream sets it for
+  anything sent off the POSINFO interval. That reading is right about the
+  encoder and wrong about what the flag *means* to the network. Track is
+  a MeshCom node's declaration that its position goes out over LoRa-APRS
+  instead of over the mesh, and `loop_functions.cpp:4453` is blunt about
+  it: `bSendViaAPRS = bDisplayTrack; bSendViaMesh = !bDisplayTrack;` - a
+  node in track mode stops feeding the mesh almost entirely. Nothing in
+  the node firmware filters on the received bit (it appears only in
+  `aprs_structures.h`, `aprs_functions.cpp` and `loop_functions.cpp`, and
+  only to be encoded, decoded and printed), so the cost lands further
+  upstream, at the server that decides what to gate to APRS-IS. The trap
+  for this board in particular: the claim would be *true* - it really is
+  on LoRa-APRS as well - and it still costs the station its MeshCom
+  visibility for nothing in return.
 
 ## V2: transmitting on USB power
 

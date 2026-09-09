@@ -17,11 +17,15 @@ void begin(const char *callsign, uint16_t seed);
 
 // Build and transmit one MeshCom position frame. Retunes the radio to the
 // MeshCom profile, transmits, and returns it to APRS.
-// track marks the position as movement-driven rather than a timer tick,
-// the way upstream does for anything sent off its POSINFO interval.
+// battPercent is the estimate the rest of the mesh puts in /B=; pass -1 to
+// leave the field out rather than send a made-up number.
 bool sendPosition(const TrackerConfig &cfg, const char *callsign,
                   float lat, float lon, float altMeters, int8_t drive,
-                  bool track = false);
+                  int battPercent = -1);
+
+// Build and transmit one HEY probe - the network's "who hears me", which
+// collects a signal report from every node that relays it.
+bool sendHey(const TrackerConfig &cfg, const char *callsign, int8_t drive);
 
 // Build and transmit one MeshCom private message to a target callsign.
 // Same retune, same return to APRS.

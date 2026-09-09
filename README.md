@@ -240,7 +240,32 @@ and an advert has no room for it either.
   default `false`)
 - **meshComInterval** - seconds between MeshCom beacons (default `900`), or
   `smart` to send one whenever the APRS SmartBeacon fires, with a 60 s floor
-- **meshComMaxHop** - MeshCom hop count (0..7, default `2`)
+- **meshComMaxHop** - MeshCom hop count for positions (0..7, default `2`)
+- **meshComHopText** - hop count for messages and the HEY probe (0..7,
+  default `4`). MeshCom splits the two; positions travel less far than text.
+- **meshComName** - station name, sent as `#name` at the end of the
+  position's free text. Every node on the mesh carries one, and a node with
+  no comment still sends `#name`, so this is the field that matters.
+- **meshComComment** - free text ahead of the name, 25 characters. `{ } : ;
+  , /` are dropped because MeshCom's own parsers read them as delimiters,
+  and a space ends the field at the receiver - write `Meshcom-Region`,
+  not `Meshcom Region`. `Meshcom-` is prefixed automatically unless the
+  text already begins that way, and an empty setting yields plain
+  `Meshcom`: both paths reach APRS-IS under the same callsign, so the
+  comment is the only thing on the map that says which one a position came
+  through.
+- **meshComGroups** - group subscriptions, e.g. `9;262;`, sent as `/R=` at
+  the end of the position. Empty by default, and that is a legitimate
+  setting rather than an omission: upstream leaves the field out entirely
+  for a node with no groups. Consider that this tracker cannot receive, so
+  a declared group asks the server to route group traffic at a station that
+  will never hear it.
+- **meshComHey** - send the HEY probe every 15 minutes (default `true`).
+  HEY asks the mesh who can hear this station: every node that relays it
+  appends its own RSSI/SNR report, so the answer accumulates in the frame
+  and reaches a gateway even though this board cannot receive. Upstream
+  damps HEY with a trickle timer that needs a receiver, so this sends at
+  the slow end of that ramp only - never more often than a real node.
 - **meshComHardwareId** - MeshCom HWID in the frame trailer (0..127,
   default `1` = TLORA_V2). This board has no id of its own, so it reports
   the closest plain SX127x node. `0` is MeshCom's "no info" and a station
@@ -248,7 +273,11 @@ and an advert has no room for it either.
   `2` TLORA_V1, `3` TLORA_V2_1_1p6, `4` TBEAM, `7` T_ECHO, `9` RAK4631.
 - **meshComFrequency** / **meshComBandwidth** / **meshComSf** /
   **meshComCr** / **meshComPreamble** - MeshCom RF profile (defaults:
-  433.175 MHz, 250 kHz, SF11, CR4:6, preamble 32)
+  433.175 MHz, 250 kHz, SF11, CR4:6, preamble 8). The preamble picks the
+  country the station reports: 8 is MeshCom's "EU8" profile, which the ham
+  networks on this band run, and 32 is its plain "EU". They differ in
+  nothing else, but a station on 32 among neighbours on 8 stands out in
+  every MHeard list.
 
 Adverts wait for a GPS fix: MeshCore stamps them with real time and the
 tracker has no clock of its own, so there is no mesh presence indoors.
