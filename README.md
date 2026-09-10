@@ -195,13 +195,18 @@ the firmware sends what it always has unless you change it:
 - **aprsAltitude** - `false` drops the `/A=` field.
 
 - **commentInterval** - seconds between comments (default `1800`, half an
-  hour), or `always` to send it on every beacon. aprs.fi keeps the last comment it
+  hour), `always` to send it on every beacon, or `off` for none at all. aprs.fi keeps the last comment it
   received and, per its author, only forgets it "if you still transmit
   packets without a comment after 7 days", so half an hour has a 336x
   margin. The comment is a third of the frame, so this recovers about 30%
   of the airtime; an hour instead of half buys only a further 2%. It is
   seconds rather than a beacon count deliberately - a count would shrink
   the gap to a few minutes at speed, which is when airtime is scarcest.
+  `off` removes the free text from every beacon including the first; the
+  telemetry and `/A=` in the same field are unaffected, since they are not
+  the comment. A station running MeshCom as well can leave `comment=` set
+  and silence only the APRS side that way - the MeshCom position picks the
+  same text up and prefixes it, so the description still reaches the map.
 
 Altitude is free while stationary. The compressed position's `cs` field
 carries either course/speed or altitude, and APRS 1.0.1 (chapter 9) says
@@ -250,10 +255,14 @@ and an advert has no room for it either.
   , /` are dropped because MeshCom's own parsers read them as delimiters,
   and a space ends the field at the receiver - write `Meshcom-Region`,
   not `Meshcom Region`. `Meshcom-` is prefixed automatically unless the
-  text already begins that way, and an empty setting yields plain
-  `Meshcom`: both paths reach APRS-IS under the same callsign, so the
-  comment is the only thing on the map that says which one a position came
-  through.
+  text is sent exactly as written, and an empty setting falls back to plain
+  `Meshcom`. Both paths reach APRS-IS under the same callsign, so this is
+  the only thing on the map that says which one a position came through -
+  which is why the fallback names the network, and why nothing is prefixed
+  to a comment you did set: `vMesh` says the same in five of the 25
+  characters. It is a separate key from **comment** rather than a copy of
+  it because that one is written for a different map, may be 64 characters
+  long, and is often a URL - and `:` and `/` do not survive the filter.
 - **meshComGroups** - group subscriptions, e.g. `9;262;`, sent as `/R=` at
   the end of the position. Empty by default, and that is a legitimate
   setting rather than an omission: upstream leaves the field out entirely

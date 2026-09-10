@@ -1640,9 +1640,15 @@ void loop() {
         // buys nothing - and it is a third of the frame. Timed rather than
         // counted, so the gap does not shrink to nothing at speed. The
         // first beacon of a session always carries it.
-        bool withComment = (cfg.commentInterval <= 0) || !commentSent ||
-                           (nowMs - lastCommentSent) >=
-                               (unsigned long)cfg.commentInterval * 1000UL;
+        // commentInterval=off silences the APRS free text completely,
+        // including the first beacon of a session. Nothing else changes:
+        // the telemetry and /A= that live in the same field still go out,
+        // because they are not the comment - they are the reason the field
+        // is there at all.
+        bool withComment = cfg.commentInterval != COMMENT_INTERVAL_OFF &&
+                           ((cfg.commentInterval == 0) || !commentSent ||
+                            (nowMs - lastCommentSent) >=
+                                (unsigned long)cfg.commentInterval * 1000UL);
         if (withComment) {
             lastCommentSent = nowMs;
             commentSent = true;

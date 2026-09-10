@@ -119,8 +119,12 @@ extern FS FatFS;
 // buys a further 2%, so there is no reason to push it.
 //
 // "always" (or 0) sends it on every beacon, for a network whose consumers
-// do not cache it the way aprs.fi does.
+// do not cache it the way aprs.fi does. "off" drops it from the APRS
+// beacon entirely - for a station whose free text lives on the MeshCom
+// side, where the position carries a prefixed copy of the same comment
+// and the network has no aprs.fi to cache it.
 #define DEFAULT_COMMENT_INTERVAL 1800
+#define COMMENT_INTERVAL_OFF     (-1)
 
 #define DEFAULT_MESH_ENABLED   false
 #define DEFAULT_MESH_NAME      "NOCALL"
@@ -161,6 +165,12 @@ extern FS FatFS;
 // '#'. PositionToAPRS() builds it that way and a node with no comment
 // still sends "#name", so the name is the part that carries.
 #define DEFAULT_MESHCOM_NAME       ""
+// Sent verbatim, 25 characters, and empty falls back to "Meshcom" - the
+// position has to say which network it came out of, because both paths
+// reach APRS-IS under the same callsign and nothing else there does. Not
+// shared with the APRS comment: that one is written for a different map,
+// is four times longer, and is usually a URL, whose ':' and '/' this
+// field's filter removes.
 #define DEFAULT_MESHCOM_COMMENT    ""
 // Group subscriptions, sent as /R=9;262; at the very end of the position.
 // Empty by default and legitimately so: PositionToAPRS() only emits the
@@ -511,9 +521,15 @@ static void configSetValue(TrackerConfig &cfg, const char *key, const char *val)
     } else if (strcasecmp(key, "commentInterval") == 0) {
         // A word or a number of seconds, the same way loraTcxo takes
         // "auto" or a voltage. "always" is what an operator reaches for;
-        // 0 is what it means.
+        // 0 is what it means. "off" is the other end and needs a word of
+        // its own rather than a number, because 0 is already taken by its
+        // opposite - "commentInterval=0" reading as "never" is exactly the
+        // kind of near-miss that goes unnoticed in the field.
         if (strcasecmp(val, "always") == 0) {
             cfg.commentInterval = 0;
+        } else if (strcasecmp(val, "off") == 0 || strcasecmp(val, "never") == 0 ||
+                   strcasecmp(val, "none") == 0) {
+            cfg.commentInterval = COMMENT_INTERVAL_OFF;
         } else {
             cfg.commentInterval = constrain(atoi(val), 0, 86400);
         }
@@ -753,7 +769,7 @@ static const char *CONFIG_TEMPLATE =
     "# on arrival anyway, and this tracker cannot receive messages.\n"
     "aprsTimestamp=true\n"
     "aprsAltitude=true\n"
-    "# Seconds between comments, or \"always\". aprs.fi caches for 7 days.\n"
+    "# Seconds between comments, \"always\", or \"off\" for none at all.\n"
     "commentInterval=1800\n"
     "\n"
     "# --- MeshCore (IARU R1 ham profile, 70cm) ---\n"
@@ -866,7 +882,7 @@ static bool configCreateDefault() {
     f.println("# timestamp off sends '!' instead of '@ddhhmmz'.");
     f.println("aprsTimestamp=true");
     f.println("aprsAltitude=true");
-f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.");
+    f.println("# Seconds between comments, \"always\", or \"off\" for none.");
     f.println("commentInterval=1800");
     f.println("");
     f.println("# --- MeshCore (IARU R1 ham profile, 70cm) ---");
@@ -891,6 +907,7 @@ f.println("# Seconds between comments, or \"always\". aprs.fi caches for 7 days.
     f.println("# station name, sent as #name - every real node has one");
     f.println("meshComName=");
     f.println("# free text, max 25 chars; avoid spaces, receivers cut there");
+    f.println("# sent verbatim, e.g. vMesh; empty falls back to \"Meshcom\"");
     f.println("meshComComment=");
     f.println("# group subscriptions, e.g. 9;262; - see the README before setting");
     f.println("meshComGroups=");

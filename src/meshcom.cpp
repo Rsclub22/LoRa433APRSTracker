@@ -116,18 +116,23 @@ static bool meshComPayload(char *out, size_t outLen, const TrackerConfig &cfg,
     }
     text[tp] = '\0';
 
-    // The comment always names the network it came out of. Both paths put
-    // the same callsign on APRS-IS - this one through a MeshCom gateway,
-    // the tracker's own beacon through a LoRa iGate - and the comment is
-    // the only thing on the map that says which. Prefixed rather than
-    // appended so it survives the 25-character cut, and skipped when the
-    // configured comment already begins that way.
+    // Set, the comment goes out exactly as written; empty, the position
+    // still says which network it came out of, because "Meshcom" is what
+    // this field falls back to.
+    //
+    // Both paths reach APRS-IS under the same callsign, so this text is
+    // the only thing on the map that distinguishes them - but the operator
+    // is the one who should word it. The APRS comment is not a candidate:
+    // it is written for a different map, it can be 64 characters against
+    // this field's 25, and a URL - the commonest APRS comment there is -
+    // loses its ':' and '/' to the filter above and arrives as rubble.
+    // Prefixing a configured comment was the other version of the same
+    // mistake: it spends eight of the 25 bytes restating what the operator
+    // already said in five ("vMesh").
     char info[64] = "";
     int used;
-    if (strncasecmp(text, "Meshcom", 7) == 0) {
+    if (tp) {
         used = snprintf(info, sizeof(info), "%s", text);
-    } else if (tp) {
-        used = snprintf(info, sizeof(info), "Meshcom-%s", text);
     } else {
         used = snprintf(info, sizeof(info), "Meshcom");
     }

@@ -102,7 +102,10 @@ sbParkedRate=1800
 aprsTimestamp=true
 aprsAltitude=true
 # Seconds between comments - it is a third of the frame, and aprs.fi
-# keeps the last one it saw for 7 days. Or "always" for every beacon.
+# keeps the last one it saw for 7 days. Or "always" for every beacon,
+# or "off" for none at all - telemetry and /A= are unaffected. A station
+# that describes itself on MeshCom instead can leave APRS silent here and
+# still keep "comment=" set: the MeshCom position picks it up.
 commentInterval=1800
 
 # --- MeshCore (IARU R1 ham profile, 70cm) ---
@@ -130,9 +133,9 @@ meshComHey=true
 meshComName=
 # Free text, max 25 chars. { } : ; , / are dropped, and a space truncates
 # the field at the receiver - that is why stations write Meshcom-Region
-# rather than "Meshcom Region". "Meshcom-" is prefixed automatically
-# unless the text already starts that way, so the comment on the map always
-# says which network the position came out of. Empty yields "Meshcom".
+# rather than "Meshcom Region". The text is sent verbatim, so it is worth
+# saying which network it came out of - the callsign alone does not, e.g.
+# meshComComment=vMesh. Empty falls back to "Meshcom".
 meshComComment=
 # Group subscriptions, e.g. 9;262; - sent as /R= at the end of the position.
 # Empty is legitimate: upstream omits the field entirely without groups, and

@@ -198,6 +198,22 @@ exactly that reason. Both are now verified against
   A space survives that filter but still breaks the field, because
   `decodeAPRSPOS()` ends the free text at the first space - which is why
   every station in this network writes its comment with hyphens.
+- **`meshComComment` is sent verbatim, and empty falls back to
+  `Meshcom`.** Two earlier versions of this field did more and both were
+  wrong. Inheriting the APRS `comment` when the key is empty looks tidy -
+  one station, one description - but the two fields are not the same
+  field: APRS allows 64 characters against this one's 25, and a URL, the
+  commonest APRS comment there is, loses its `:` and `/` to
+  `charset_filter` and arrives as `httpsphilipp.wagnersnet`. Forcing a
+  `Meshcom-` prefix onto a comment the operator *did* set was the same
+  mistake from the other side: both paths reach APRS-IS under the same
+  callsign, so the text does have to say which network a position came out
+  of - but someone who writes `vMesh` has already said it in five bytes,
+  and the prefix would spend eight more restating it. The fallback is
+  where that duty belongs, because an unset field is the only case where
+  nobody has answered. `commentInterval=off` is the unrelated other half:
+  it silences the APRS free text, telemetry and `/A=` excepted, for a
+  station that would rather spend those bytes.
 - **The firmware-version byte in the trailer is a protocol generation.**
   Three receivers read it: `aprs_functions.cpp:496` discards the entire
   frame when it is 1..34 ("Packet discarded, wrong FW-version"), and
@@ -208,6 +224,30 @@ exactly that reason. Both are now verified against
   accepted it. It now sends 35. Nodes built before that check went in
   accept anything, which is why a bench pair on February and April builds
   showed nothing wrong.
+
+  What 35 *says* is "4.35": `shortVERSION()` is
+  `memcpy(cfw, SOURCE_VERSION+2, 2)` over `SOURCE_VERSION "4.35"`, so the
+  byte is only the part after the dot and the major version is never
+  transmitted at all. 35 is therefore not a version this board picked but
+  the network's current floor - the discard test is `< 35`, so anything
+  lower is refused and anything higher claims a generation that does not
+  exist yet. It has to be raised in step with upstream whenever that
+  constant moves.
+
+  The sub-version byte after the FCS is uninterpreted, and `'#'` is the
+  network's own word for "not stated". Upstream sends
+  `SOURCE_VERSION_SUB`, a letter (`"s"` in dev as of 2026-09), but nothing
+  in the node firmware ever compares the received byte: it is printed
+  (`printBuffer_aprs`, as `FW:%02i:%c`) and forwarded to the server as the
+  JSON string `fw_sub` (`extudp_functions.cpp`), and that is all. So `'#'`
+  is not this board inventing a marker - `decodeAPRS()` substitutes `'#'`
+  itself whenever the byte is `0x00` or missing entirely (the trailer
+  ending `0x7E` arrives in its place), and the encoder writes `0x23` for a
+  zero field on the way out. Sending it says exactly "no sub-version",
+  using the value every node already generates for that case, which is why
+  it cannot trip a check that does not exist and cannot be mistaken for a
+  release either. The corollary is that it does **not** identify this
+  tracker: an old node and a truncated frame decode to the same `'#'`.
 - **Two hop limits, not one.** `initAPRS()` gives `:` and `@` the text
   limit and everything else the position limit, which is why real nodes
   send positions at H02 and messages and HEY at H04. `meshComHopText`
